@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.env
+
+# Banco de Dados e Docker
+postgres_data/
+
+# Arquivos de Upload (Privacidade do Paciente)
+arquivos_solicitacoes/
+certs/
+*.pem
+*.pfx
+
+# Frontend (React/Node)
+node_modules/
+dist/
+.eslintcache
+
+# Windows
+Thumbs.db
+Desktop.ini
