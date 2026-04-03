@@ -100,6 +100,7 @@ class EscalaCentral(Base):
     hr_fim: Mapped[datetime] = mapped_column(Time)
     qt_atendimento: Mapped[int] = mapped_column(Integer)
     tempo_medio_min: Mapped[int] = mapped_column(Integer) # Essencial para fatiar os slots
+    is_disponivel_app: Mapped[bool] = mapped_column(Boolean, default=True)
 
 class AgendaCentral(Base):
     """O Dia Gerado a partir do Molde"""

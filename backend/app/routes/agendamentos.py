@@ -139,6 +139,13 @@ def listar_horarios_disponiveis(
     if not escala:
         raise HTTPException(status_code=404, detail="Escala não encontrada.")
 
+    # 👇 NOVA TRAVA SÊNIOR AQUI 👇
+    if not escala.is_disponivel_app:
+        raise HTTPException(
+            status_code=403, 
+            detail="Esta agenda é exclusiva para marcação presencial na recepção da UBS."
+        )
+
     # 2. Gerar TODOS os slots possíveis em memória usando o nosso Generator
     todos_slots = list(gerar_slots_tempo(escala.hr_inicio, escala.hr_fim, escala.tempo_medio_min))
     
