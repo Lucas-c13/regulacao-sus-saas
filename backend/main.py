@@ -2,15 +2,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from apscheduler.schedulers.background import BackgroundScheduler
-
 from app.routes import auth, pacientes, agendamentos, profissionais
-from app.database.session import engine
-from app.database import models
 from app.core.middlewares import AuditoriaMiddleware
 from app.core.tasks import processar_no_shows 
-
-# Cria as tabelas na inicialização
-models.Base.metadata.create_all(bind=engine)
 
 # ==========================================
 # GESTOR DE CICLO DE VIDA (LIFESPAN)
