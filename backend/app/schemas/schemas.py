@@ -15,3 +15,9 @@ class NovoAgendamentoApp(BaseModel):
 
 class AtualizaStatusAgendamento(BaseModel):
     novo_status: str
+    
+class NovoProfissionalUBS(BaseModel):
+    nome: str
+    cpf: str
+    senha: str
+    id_ubs: str # A UBS para onde o novo funcionário vai ser designado
