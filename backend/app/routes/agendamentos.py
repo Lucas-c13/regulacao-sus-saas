@@ -4,7 +4,9 @@ from datetime import datetime, date, time, timedelta
 from ..database.session import get_db
 from ..database import models
 from ..schemas import schemas
-from ..core.security import get_usuario_logado
+from ..core.security import get_usuario_logado, get_tenant_db
+from fastapi import Query
+from typing import List
 
 router = APIRouter(prefix="/agendamentos", tags=["Agendamentos"])
 
@@ -72,10 +74,104 @@ def listar_especialidades(db: Session = Depends(get_db)):
     return [{"id_especialidade": e.id_especialidade, "nome": e.nome} for e in especialidades]
 
 @router.get("/minha-agenda")
-def listar_agenda_medico(db: Session = Depends(get_db), usuario = Depends(get_usuario_logado)):
+def listar_agenda_medico(
+    db_tenant: tuple = Depends(get_tenant_db), # <--- Nossa injeção poderosa aqui
+    usuario: dict = Depends(get_usuario_logado)
+):
+    # Desempacota a tupla retornada pelo get_tenant_db
+    db, tenant_id = db_tenant
     hoje = date.today()
-    pacientes = db.query(models.ItAgendaCentral).join(models.AgendaCentral).join(models.EscalaCentral).filter(
+    
+    # Observe a segurança: Filtramos a Escala pelo Profissional logado 
+    # E garantimos silenciosamente que a UBS pertence ao Tenant (Município) dele
+    pacientes = db.query(models.ItAgendaCentral).join(
+        models.AgendaCentral
+    ).join(
+        models.EscalaCentral
+    ).join(
+        models.UBS, models.EscalaCentral.id_ubs == models.UBS.id_ubs
+    ).filter(
         models.EscalaCentral.id_profissional == usuario["id_profissional"],
-        models.AgendaCentral.dt_agenda == hoje
+        models.AgendaCentral.dt_agenda == hoje,
+        models.UBS.id_municipio == tenant_id  # <--- TENANT ENFORCEMENT EM AÇÃO!
     ).all()
-    return {"medico": usuario["sub"], "data": hoje, "pacientes": [{"hora": p.hr_agenda, "status": p.tp_situacao} for p in pacientes]}
+    
+    return {
+        "medico": usuario["sub"], 
+        "data": hoje, 
+        "total_pacientes": len(pacientes),
+        "pacientes": [
+            {"hora": p.hr_agenda.strftime("%H:%M"), "status": p.tp_situacao} 
+            for p in pacientes
+        ]
+    }
+
+# ==========================================
+# FUNÇÃO UTILITÁRIA (GERADOR PYTHONICO)
+# ==========================================
+def gerar_slots_tempo(hr_inicio: time, hr_fim: time, intervalo_min: int):
+    """
+    Gerador que fatia o tempo de forma eficiente em memória.
+    Usa uma data fictícia apenas para permitir a soma de timedelta.
+    """
+    data_base = date(2000, 1, 1) 
+    atual = datetime.combine(data_base, hr_inicio)
+    fim = datetime.combine(data_base, hr_fim)
+    
+    while atual + timedelta(minutes=intervalo_min) <= fim:
+        yield atual.time()
+        atual += timedelta(minutes=intervalo_min)
+
+# ==========================================
+# ENDPOINT DE DISPONIBILIDADE
+# ==========================================
+@router.get("/disponiveis")
+def listar_horarios_disponiveis(
+    id_escala: str = Query(..., description="ID da Escala Central (O molde)"),
+    data_consulta: date = Query(..., description="Data desejada para o agendamento"),
+    db: Session = Depends(get_db)
+):
+    # 1. Buscar a Escala (Molde) para saber os horários e tempo de atendimento
+    escala = db.query(models.EscalaCentral).filter(
+        models.EscalaCentral.id_escala == id_escala
+    ).first()
+    
+    if not escala:
+        raise HTTPException(status_code=404, detail="Escala não encontrada.")
+
+    # 2. Gerar TODOS os slots possíveis em memória usando o nosso Generator
+    todos_slots = list(gerar_slots_tempo(escala.hr_inicio, escala.hr_fim, escala.tempo_medio_min))
+    
+    # 3. Verificar se já existe uma agenda gerada para este dia
+    agenda_dia = db.query(models.AgendaCentral).filter(
+        models.AgendaCentral.id_escala == id_escala,
+        models.AgendaCentral.dt_agenda == data_consulta,
+        models.AgendaCentral.sn_ativo == True
+    ).first()
+
+    slots_ocupados = set() # Usamos Set pela performance O(1) na pesquisa
+
+    if agenda_dia:
+        # 4. Se a agenda existe, buscamos os slots que NÃO estão disponíveis
+        # 'M' = Marcado, 'A' = Chegou/Aguardando, 'F' = Faltou
+        itens_ocupados = db.query(models.ItAgendaCentral.hr_agenda).filter(
+            models.ItAgendaCentral.id_agenda == agenda_dia.id_agenda,
+            models.ItAgendaCentral.tp_situacao.in_(['M', 'A', 'F']) 
+        ).all()
+        
+        # itens_ocupados retorna uma lista de tuplos, ex: [(datetime.time(8, 0),), ...]
+        slots_ocupados = {item[0] for item in itens_ocupados}
+
+    # 5. Cruzamento de dados (List Comprehension)
+    # Retorna o slot apenas se ele não estiver no Set de ocupados
+    slots_disponiveis = [
+        slot.strftime("%H:%M") for slot in todos_slots if slot not in slots_ocupados
+    ]
+
+    return {
+        "id_escala": id_escala,
+        "data_consulta": data_consulta,
+        "tempo_atendimento_min": escala.tempo_medio_min,
+        "total_vagas_livres": len(slots_disponiveis),
+        "horarios_disponiveis": slots_disponiveis
+    }

@@ -4,6 +4,7 @@ from passlib.context import CryptContext
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 import os
+from ..database.session import get_db
 
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 SECRET_KEY = os.getenv("SECRET_KEY", "7e471f75f98d67cc998b36fa7b9d8cc493bc50d5")
@@ -24,3 +25,22 @@ def get_usuario_logado(token: str = Depends(oauth2_scheme)):
         return payload
     except JWTError:
         raise HTTPException(status_code=401, detail="Token inválido")
+
+def get_tenant_db(
+    usuario: dict = Depends(get_usuario_logado),
+    db = Depends(get_db)
+):
+    """
+    Dependência Sênior: Retorna a sessão do banco e o ID do Tenant de uma só vez.
+    Obriga o desenvolvedor a usar o tenant_id nas consultas.
+    """
+    tenant_id = usuario.get("id_municipio")
+    
+    if not tenant_id:
+        raise HTTPException(
+            status_code=403, 
+            detail="Acesso Negado: Token não possui vínculo com um Município (Tenant)."
+        )
+        
+    # Retorna uma tupla contendo o DB e o Tenant ID extraído do Token
+    return db, tenant_id
