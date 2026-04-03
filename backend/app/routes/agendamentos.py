@@ -175,3 +175,41 @@ def listar_horarios_disponiveis(
         "total_vagas_livres": len(slots_disponiveis),
         "horarios_disponiveis": slots_disponiveis
     }
+
+# Adicione no final de app/routes/agendamentos.py
+
+@router.patch("/{id_item}/cancelar")
+def cancelar_agendamento_paciente(
+    id_item: str, 
+    db: Session = Depends(get_db)
+    # Nota: Em produção, aqui entraria também a validação do Token do Paciente (App)
+    # para garantir que só o dono do agendamento pode cancelar.
+):
+    """
+    Rota utilizada pelo App do Cidadão para cancelar uma marcação.
+    Altera o status para 'C' (Cancelado), liberando o slot para outros pacientes.
+    """
+    slot = db.query(models.ItAgendaCentral).filter(
+        models.ItAgendaCentral.id_item == id_item
+    ).first()
+
+    if not slot:
+        raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
+        
+    if slot.tp_situacao == 'C':
+        raise HTTPException(status_code=400, detail="Este agendamento já foi cancelado.")
+        
+    if slot.tp_situacao == 'A' or slot.tp_situacao == 'F':
+        raise HTTPException(
+            status_code=400, 
+            detail="Não é possível cancelar um agendamento que já foi concluído ou faturado como falta."
+        )
+
+    # Aplica o status de cancelamento
+    slot.tp_situacao = 'C'
+    db.commit()
+
+    return {
+        "msg": "Agendamento cancelado com sucesso. A vaga foi devolvida à UBS.", 
+        "novo_status": slot.tp_situacao
+    }

@@ -4,7 +4,10 @@ from passlib.context import CryptContext
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 import os
+from dotenv import load_dotenv
 from ..database.session import get_db
+
+load_dotenv()
 
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 SECRET_KEY = os.getenv("SECRET_KEY", "7e471f75f98d67cc998b36fa7b9d8cc493bc50d5")
