@@ -65,3 +65,17 @@ def atualizar_status_recepcao(id_item: str, dados: schemas.AtualizaStatusAgendam
     slot.tp_situacao = dados.novo_status
     db.commit()
     return {"msg": "Status atualizado", "novo_status": slot.tp_situacao, "executor": usuario["sub"]}
+
+@router.get("/especialidades")
+def listar_especialidades(db: Session = Depends(get_db)):
+    especialidades = db.query(models.Especialidade).filter(models.Especialidade.is_livre_demanda == True).all()
+    return [{"id_especialidade": e.id_especialidade, "nome": e.nome} for e in especialidades]
+
+@router.get("/minha-agenda")
+def listar_agenda_medico(db: Session = Depends(get_db), usuario = Depends(get_usuario_logado)):
+    hoje = date.today()
+    pacientes = db.query(models.ItAgendaCentral).join(models.AgendaCentral).join(models.EscalaCentral).filter(
+        models.EscalaCentral.id_profissional == usuario["id_profissional"],
+        models.AgendaCentral.dt_agenda == hoje
+    ).all()
+    return {"medico": usuario["sub"], "data": hoje, "pacientes": [{"hora": p.hr_agenda, "status": p.tp_situacao} for p in pacientes]}
