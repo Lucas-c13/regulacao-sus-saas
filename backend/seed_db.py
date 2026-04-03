@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, date, time
 from database import SessionLocal
 from models import Municipio, UBS, Profissional, Especialidade, Paciente, EscalaCentral
+from auth import gerar_hash_senha
 
 def seed():
     db = SessionLocal()
@@ -28,13 +29,14 @@ def seed():
         db.flush()
 
         # 3. Criar um Profissional (Médico) vinculado ao Município
+        # 3. Criar um Profissional (Médico) com senha criptografada real
         profissional = Profissional(
             id_municipio=municipio.id_municipio,
             nome="Dr. Lucas Silva",
             cpf="11122233344",
             conselho="CRM-MG 12345",
-            # No futuro, isto será gerado pelo passlib. Aqui usamos um hash falso para teste.
-            senha_hash="$2b$12$DummyHashSeguroParaTeste1234567890", 
+            # Agora usamos o hash real gerado pela nossa biblioteca de segurança
+            senha_hash=gerar_hash_senha("admin123"), 
             sn_ativo=True
         )
         db.add(profissional)
