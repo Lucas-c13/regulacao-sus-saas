@@ -4,7 +4,7 @@ from typing import Optional
 from sqlalchemy import String, ForeignKey, DateTime, Date, Time, Boolean, Integer, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import JSONB
-from database import Base
+from .session import Base
 
 # ==========================================
 # 1. CORE MULTI-TENANT E ACESSOS
