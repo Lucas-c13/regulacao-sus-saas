@@ -75,6 +75,7 @@ def listar_especialidades(db: Session = Depends(get_db)):
 
 @router.get("/minha-agenda")
 def listar_agenda_medico(
+    id_ubs: str,
     db_tenant: tuple = Depends(get_tenant_db), # <--- Nossa injeção poderosa aqui
     usuario: dict = Depends(get_usuario_logado)
 ):
@@ -92,8 +93,9 @@ def listar_agenda_medico(
         models.UBS, models.EscalaCentral.id_ubs == models.UBS.id_ubs
     ).filter(
         models.EscalaCentral.id_profissional == usuario["id_profissional"],
+        models.AgendamentoItem.id_ubs == id_ubs,
         models.AgendaCentral.dt_agenda == hoje,
-        models.UBS.id_municipio == tenant_id  # <--- TENANT ENFORCEMENT EM AÇÃO!
+        models.UBS.id_municipio == tenant_id 
     ).all()
     
     return {

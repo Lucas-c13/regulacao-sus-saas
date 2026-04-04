@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from apscheduler.schedulers.background import BackgroundScheduler
-from app.routes import auth, pacientes, agendamentos, profissionais, enderecos, feriados
+from app.routes import auth, pacientes, agendamentos, profissionais, enderecos, feriados, ubs
 from app.core.middlewares import AuditoriaMiddleware
 from app.core.tasks import processar_no_shows, gerar_agendas_automaticamente
 
@@ -58,6 +58,7 @@ app.include_router(agendamentos.router)
 app.include_router(profissionais.router)
 app.include_router(enderecos.router)
 app.include_router(feriados.router)
+app.include_router(ubs.router)
 
 @app.get("/")
 def home():
