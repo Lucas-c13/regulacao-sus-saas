@@ -1,28 +1,40 @@
+version: '3.8'
+
 services:
-  # 1. Base de Dados Principal (PostgreSQL)
   db:
     image: postgres:15-alpine
     container_name: agendamento_db
     restart: always
-    env_file:
-      - .env
+    env_file: .env
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  # 2. Mensageiro para Background Tasks (Redis)
   redis:
-    image: redis:7-alpine
+    image: redis:alpine
     container_name: agendamento_redis
     restart: always
     ports:
       - "6379:6379"
-    # Guarda os dados no disco a cada 60 segundos caso o contentor reinicie
-    command: redis-server --save 60 1 --loglevel warning
+
+  # 👇 ADICIONE ESTE BLOCO AQUI 👇
+  api:
+    build: .
+    container_name: regulacao_sus_api
+    restart: always
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    env_file: .env
+    ports:
+      - "8000:8000"
     volumes:
-      - redis_data:/data
+      - .:/app
+    depends_on:
+      - db
+      - redis
+    # Garante que a API consegue falar com o DB usando o nome do serviço
+    environment:
+      - DATABASE_URL=postgresql://admin:admin_password@db:5432/db_regulacao
 
 volumes:
   postgres_data:
-  redis_data:
