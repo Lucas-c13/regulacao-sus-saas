@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from apscheduler.schedulers.background import BackgroundScheduler
 from app.routes import auth, pacientes, agendamentos, profissionais, enderecos, feriados
 from app.core.middlewares import AuditoriaMiddleware
-from app.core.tasks import processar_no_shows 
+from app.core.tasks import processar_no_shows, gerar_agendas_automaticamente
 
 # ==========================================
 # GESTOR DE CICLO DE VIDA (LIFESPAN)
@@ -18,16 +18,19 @@ async def lifespan(app: FastAPI):
     # ⚠️ PARA TESTE: Vamos colocar para rodar a cada 1 minuto
     # Em produção, usaremos: trigger="cron", hour=23, minute=59
     scheduler.add_job(processar_no_shows, 'interval', minutes=1, id="job_no_show")
+
+    # Tarefa 2: Gerador de Agendas em Massa 
+    # ⚠️ PARA TESTE: Vamos colocar para rodar a cada 1 minuto
+    # Em produção, usaremos: trigger="cron", hour=2, minute=0 (Madrugada)
+    scheduler.add_job(gerar_agendas_automaticamente, 'interval', minutes=1, id="job_gerador_agendas")
     
     scheduler.start()
-    print("⏰ Motor de Background Tasks (APScheduler) iniciado!")
+    print("⏰ Motor de Background Tasks (APScheduler) iniciado com 2 rotinas!")
     
-    yield # O FastAPI fica rodando livremente aqui...
+    yield # O FastAPI fica a rodar livremente aqui...
     
-    # O que acontece ao DESLIGAR o servidor:
     scheduler.shutdown()
     print("🛑 Motor de Background Tasks encerrado.")
-
 # ==========================================
 # INICIALIZAÇÃO DA APLICAÇÃO
 # ==========================================
