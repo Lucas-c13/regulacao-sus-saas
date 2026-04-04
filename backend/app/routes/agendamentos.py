@@ -1,115 +1,25 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from sqlalchemy import func
 from datetime import datetime, date, time, timedelta
+from typing import List
+
 from ..database.session import get_db
 from ..database import models
 from ..schemas import schemas
-from ..core.security import get_usuario_logado, get_tenant_db
-from fastapi import Query
-from typing import List
+from ..core.security import get_usuario_logado
 
 router = APIRouter(prefix="/agendamentos", tags=["Agendamentos"])
 
-# Função auxiliar movida para cá
+# ==========================================
+# FUNÇÕES AUXILIARES
+# ==========================================
 def somar_minutos(horario: time, minutos: int) -> time:
     data_falsa = date(2000, 1, 1)
     dt_completa = datetime.combine(data_falsa, horario) + timedelta(minutes=minutos)
     return dt_completa.time()
 
-@router.post("/")
-def realizar_agendamento(dados: schemas.NovoAgendamentoApp, db: Session = Depends(get_db)):
-    # Trava de Absenteísmo
-    paciente = db.query(models.Paciente).filter(models.Paciente.id_paciente == dados.id_paciente).first()
-    if not paciente:
-        raise HTTPException(status_code=404, detail="Paciente não encontrado.")
-        
-    municipio = db.query(models.Municipio).filter(models.Municipio.id_municipio == paciente.id_municipio).first()
-    if municipio and municipio.config_absenteismo:
-        limite_faltas = municipio.config_absenteismo.get("faltas_limite", 3)
-        faltas_cometidas = db.query(models.ItAgendaCentral).filter(
-            models.ItAgendaCentral.id_paciente == dados.id_paciente,
-            models.ItAgendaCentral.tp_situacao == 'F'
-        ).count()
-        if faltas_cometidas >= limite_faltas:
-            raise HTTPException(status_code=403, detail="Bloqueio por absenteísmo.")
-
-    # Trava de Overbooking (LOCK)
-    agenda_dia = db.query(models.AgendaCentral).filter(
-        models.AgendaCentral.id_escala == dados.id_escala,
-        models.AgendaCentral.dt_agenda == dados.data_agendamento
-    ).with_for_update().first()
-
-    if not agenda_dia:
-        agenda_dia = models.AgendaCentral(id_escala=dados.id_escala, dt_agenda=dados.data_agendamento)
-        db.add(agenda_dia); db.flush() 
-        
-    slot_ocupado = db.query(models.ItAgendaCentral).filter(
-        models.ItAgendaCentral.id_agenda == agenda_dia.id_agenda,
-        models.ItAgendaCentral.hr_agenda == dados.hora_vaga,
-        models.ItAgendaCentral.tp_situacao.in_(['M', 'A'])
-    ).first()
-    
-    if slot_ocupado:
-        raise HTTPException(status_code=409, detail="Horário reservado.")
-
-    novo_slot = models.ItAgendaCentral(
-        id_agenda=agenda_dia.id_agenda, hr_agenda=dados.hora_vaga,
-        id_paciente=dados.id_paciente, tp_situacao='M'
-    )
-    db.add(novo_slot); db.commit() 
-    return {"msg": "Agendamento confirmado!", "id_item": novo_slot.id_item}
-
-@router.patch("/{id_item}/status")
-def atualizar_status_recepcao(id_item: str, dados: schemas.AtualizaStatusAgendamento, db: Session = Depends(get_db), usuario = Depends(get_usuario_logado)):
-    slot = db.query(models.ItAgendaCentral).filter(models.ItAgendaCentral.id_item == id_item).first()
-    if not slot:
-        raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
-    slot.tp_situacao = dados.novo_status
-    db.commit()
-    return {"msg": "Status atualizado", "novo_status": slot.tp_situacao, "executor": usuario["sub"]}
-
-@router.get("/especialidades")
-def listar_especialidades(db: Session = Depends(get_db)):
-    especialidades = db.query(models.Especialidade).filter(models.Especialidade.is_livre_demanda == True).all()
-    return [{"id_especialidade": e.id_especialidade, "nome": e.nome} for e in especialidades]
-
-@router.get("/minha-agenda")
-def listar_agenda_medico(
-    id_ubs: str, 
-    db: Session = Depends(get_db), # <-- Usamos o get_db normal e seguro
-    usuario: dict = Depends(get_usuario_logado)
-):
-    hoje = datetime.now().date()
-
-    # O JOIN Sênior: ItAgendaCentral -> AgendaCentral -> EscalaCentral
-    pacientes = db.query(models.ItAgendaCentral).join(
-        models.AgendaCentral, models.ItAgendaCentral.id_agenda == models.AgendaCentral.id_agenda
-    ).join(
-        models.EscalaCentral, models.AgendaCentral.id_escala == models.EscalaCentral.id_escala
-    ).filter(
-        models.EscalaCentral.id_profissional == usuario["id_profissional"],
-        models.EscalaCentral.id_ubs == id_ubs, # <-- Filtra pela UBS selecionada no React!
-        models.AgendaCentral.dt_agenda == hoje,
-        models.AgendaCentral.sn_ativo == True
-    ).order_by(models.ItAgendaCentral.hr_agenda).all()
-
-    return {
-        "medico": usuario["sub"], 
-        "data": hoje, 
-        "total_pacientes": len(pacientes),
-        "pacientes": [
-            {
-                "id_item": str(p.id_item), # <-- O REACT PRECISA DISTO PARA O BOTÃO FUNCIONAR!
-                "hora": p.hr_agenda.strftime("%H:%M"), 
-                "status": p.tp_situacao or 'M'
-            } 
-            for p in pacientes
-        ]
-    }
-
-# ==========================================
-# FUNÇÃO UTILITÁRIA (GERADOR PYTHONICO)
-# ==========================================
 def gerar_slots_tempo(hr_inicio: time, hr_fim: time, intervalo_min: int):
     """
     Gerador que fatia o tempo de forma eficiente em memória.
@@ -123,55 +33,179 @@ def gerar_slots_tempo(hr_inicio: time, hr_fim: time, intervalo_min: int):
         yield atual.time()
         atual += timedelta(minutes=intervalo_min)
 
+
 # ==========================================
-# ENDPOINT DE DISPONIBILIDADE
+# ROTAS
 # ==========================================
+
+@router.post("/")
+async def realizar_agendamento(dados: schemas.NovoAgendamentoApp, db: AsyncSession = Depends(get_db)):
+    # 1. Trava de Absenteísmo
+    stmt_paciente = select(models.Paciente).filter_by(id_paciente=dados.id_paciente)
+    paciente = (await db.execute(stmt_paciente)).scalar_one_or_none()
+    
+    if not paciente:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado.")
+        
+    stmt_municipio = select(models.Municipio).filter_by(id_municipio=paciente.id_municipio)
+    municipio = (await db.execute(stmt_municipio)).scalar_one_or_none()
+    
+    if municipio and municipio.config_absenteismo:
+        limite_faltas = municipio.config_absenteismo.get("faltas_limite", 3)
+        
+        # Contagem de faltas usando func.count para otimizar a query
+        stmt_faltas = select(func.count(models.ItAgendaCentral.id_item)).filter(
+            models.ItAgendaCentral.id_paciente == dados.id_paciente,
+            models.ItAgendaCentral.tp_situacao == 'F'
+        )
+        faltas_cometidas = (await db.execute(stmt_faltas)).scalar()
+        
+        if faltas_cometidas >= limite_faltas:
+            raise HTTPException(status_code=403, detail="Bloqueio por absenteísmo.")
+
+    # 2. Iniciar Transação e Trava de Overbooking (Pessimistic Lock)
+    async with db.begin():
+        stmt_agenda = select(models.AgendaCentral).filter(
+            models.AgendaCentral.id_escala == dados.id_escala,
+            models.AgendaCentral.dt_agenda == dados.data_agendamento
+        ).with_for_update() # O Lock acontece aqui!
+        
+        agenda_dia = (await db.execute(stmt_agenda)).scalar_one_or_none()
+
+        # Se a agenda do dia não existe, cria o "molde"
+        if not agenda_dia:
+            agenda_dia = models.AgendaCentral(id_escala=dados.id_escala, dt_agenda=dados.data_agendamento)
+            db.add(agenda_dia)
+            await db.flush() # Flush envia para o banco para gerar o ID, mas não commita ainda
+            
+        # Verifica se o slot exato já foi ocupado (Evita Race Condition)
+        stmt_slot = select(models.ItAgendaCentral).filter(
+            models.ItAgendaCentral.id_agenda == agenda_dia.id_agenda,
+            models.ItAgendaCentral.hr_agenda == dados.hora_vaga,
+            models.ItAgendaCentral.tp_situacao.in_(['M', 'A'])
+        )
+        slot_ocupado = (await db.execute(stmt_slot)).first()
+        
+        if slot_ocupado:
+            raise HTTPException(status_code=409, detail="Horário reservado por outro cidadão neste momento.")
+
+        # 3. Confirma o Agendamento
+        novo_slot = models.ItAgendaCentral(
+            id_agenda=agenda_dia.id_agenda, 
+            hr_agenda=dados.hora_vaga,
+            id_paciente=dados.id_paciente, 
+            tp_situacao='M'
+        )
+        db.add(novo_slot)
+        
+    # O commit é automático ao sair do bloco `async with db.begin()`
+    return {"msg": "Agendamento confirmado!", "id_item": novo_slot.id_item}
+
+
+@router.patch("/{id_item}/status")
+async def atualizar_status_recepcao(id_item: str, dados: schemas.AtualizaStatusAgendamento, db: AsyncSession = Depends(get_db), usuario = Depends(get_usuario_logado)):
+    stmt = select(models.ItAgendaCentral).filter_by(id_item=id_item)
+    slot = (await db.execute(stmt)).scalar_one_or_none()
+    
+    if not slot:
+        raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
+        
+    slot.tp_situacao = dados.novo_status
+    await db.commit()
+    
+    return {"msg": "Status atualizado", "novo_status": slot.tp_situacao, "executor": usuario["sub"]}
+
+
+@router.get("/especialidades")
+async def listar_especialidades(db: AsyncSession = Depends(get_db)):
+    stmt = select(models.Especialidade).filter_by(is_livre_demanda=True)
+    # scalars().all() extrai os objetos da tupla do SQLAlchemy
+    especialidades = (await db.execute(stmt)).scalars().all() 
+    return [{"id_especialidade": e.id_especialidade, "nome": e.nome} for e in especialidades]
+
+
+@router.get("/minha-agenda")
+async def listar_agenda_medico(
+    id_ubs: str, 
+    db: AsyncSession = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado)
+):
+    hoje = datetime.now().date()
+
+    # JOIN no novo formato do SQLAlchemy 2.0
+    stmt = select(models.ItAgendaCentral).join(
+        models.AgendaCentral, models.ItAgendaCentral.id_agenda == models.AgendaCentral.id_agenda
+    ).join(
+        models.EscalaCentral, models.AgendaCentral.id_escala == models.EscalaCentral.id_escala
+    ).filter(
+        models.EscalaCentral.id_profissional == usuario["id_profissional"],
+        models.EscalaCentral.id_ubs == id_ubs, 
+        models.AgendaCentral.dt_agenda == hoje,
+        models.AgendaCentral.sn_ativo == True
+    ).order_by(models.ItAgendaCentral.hr_agenda)
+
+    pacientes = (await db.execute(stmt)).scalars().all()
+
+    return {
+        "medico": usuario["sub"], 
+        "data": hoje, 
+        "total_pacientes": len(pacientes),
+        "pacientes": [
+            {
+                "id_item": str(p.id_item),
+                "hora": p.hr_agenda.strftime("%H:%M"), 
+                "status": p.tp_situacao or 'M'
+            } 
+            for p in pacientes
+        ]
+    }
+
+
 @router.get("/disponiveis")
-def listar_horarios_disponiveis(
+async def listar_horarios_disponiveis(
     id_escala: str = Query(..., description="ID da Escala Central (O molde)"),
     data_consulta: date = Query(..., description="Data desejada para o agendamento"),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    # 1. Buscar a Escala (Molde) para saber os horários e tempo de atendimento
-    escala = db.query(models.EscalaCentral).filter(
-        models.EscalaCentral.id_escala == id_escala
-    ).first()
+    # 1. Buscar a Escala (Molde)
+    stmt_escala = select(models.EscalaCentral).filter_by(id_escala=id_escala)
+    escala = (await db.execute(stmt_escala)).scalar_one_or_none()
     
     if not escala:
         raise HTTPException(status_code=404, detail="Escala não encontrada.")
 
-    # 👇 NOVA TRAVA SÊNIOR AQUI 👇
+    # Trava Sênior
     if not escala.is_disponivel_app:
         raise HTTPException(
             status_code=403, 
             detail="Esta agenda é exclusiva para marcação presencial na recepção da UBS."
         )
 
-    # 2. Gerar TODOS os slots possíveis em memória usando o nosso Generator
+    # 2. Gerar TODOS os slots em memória
     todos_slots = list(gerar_slots_tempo(escala.hr_inicio, escala.hr_fim, escala.tempo_medio_min))
     
     # 3. Verificar se já existe uma agenda gerada para este dia
-    agenda_dia = db.query(models.AgendaCentral).filter(
+    stmt_agenda = select(models.AgendaCentral).filter(
         models.AgendaCentral.id_escala == id_escala,
         models.AgendaCentral.dt_agenda == data_consulta,
         models.AgendaCentral.sn_ativo == True
-    ).first()
+    )
+    agenda_dia = (await db.execute(stmt_agenda)).scalar_one_or_none()
 
-    slots_ocupados = set() # Usamos Set pela performance O(1) na pesquisa
+    slots_ocupados = set() 
 
     if agenda_dia:
-        # 4. Se a agenda existe, buscamos os slots que NÃO estão disponíveis
-        # 'M' = Marcado, 'A' = Chegou/Aguardando, 'F' = Faltou
-        itens_ocupados = db.query(models.ItAgendaCentral.hr_agenda).filter(
+        # Buscamos apenas a hr_agenda para economizar memória (Query Otimizada)
+        stmt_itens = select(models.ItAgendaCentral.hr_agenda).filter(
             models.ItAgendaCentral.id_agenda == agenda_dia.id_agenda,
             models.ItAgendaCentral.tp_situacao.in_(['M', 'A', 'F']) 
-        ).all()
+        )
+        itens_ocupados = (await db.execute(stmt_itens)).scalars().all()
         
-        # itens_ocupados retorna uma lista de tuplos, ex: [(datetime.time(8, 0),), ...]
-        slots_ocupados = {item[0] for item in itens_ocupados}
+        # O scalars().all() já retorna a lista limpa de datetime.time
+        slots_ocupados = set(itens_ocupados)
 
-    # 5. Cruzamento de dados (List Comprehension)
-    # Retorna o slot apenas se ele não estiver no Set de ocupados
+    # 4. Cruzamento de dados 
     slots_disponiveis = [
         slot.strftime("%H:%M") for slot in todos_slots if slot not in slots_ocupados
     ]
@@ -184,22 +218,14 @@ def listar_horarios_disponiveis(
         "horarios_disponiveis": slots_disponiveis
     }
 
-# Adicione no final de app/routes/agendamentos.py
 
 @router.patch("/{id_item}/cancelar")
-def cancelar_agendamento_paciente(
+async def cancelar_agendamento_paciente(
     id_item: str, 
-    db: Session = Depends(get_db)
-    # Nota: Em produção, aqui entraria também a validação do Token do Paciente (App)
-    # para garantir que só o dono do agendamento pode cancelar.
+    db: AsyncSession = Depends(get_db)
 ):
-    """
-    Rota utilizada pelo App do Cidadão para cancelar uma marcação.
-    Altera o status para 'C' (Cancelado), liberando o slot para outros pacientes.
-    """
-    slot = db.query(models.ItAgendaCentral).filter(
-        models.ItAgendaCentral.id_item == id_item
-    ).first()
+    stmt = select(models.ItAgendaCentral).filter_by(id_item=id_item)
+    slot = (await db.execute(stmt)).scalar_one_or_none()
 
     if not slot:
         raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
@@ -207,7 +233,7 @@ def cancelar_agendamento_paciente(
     if slot.tp_situacao == 'C':
         raise HTTPException(status_code=400, detail="Este agendamento já foi cancelado.")
         
-    if slot.tp_situacao == 'A' or slot.tp_situacao == 'F':
+    if slot.tp_situacao in ['A', 'F']:
         raise HTTPException(
             status_code=400, 
             detail="Não é possível cancelar um agendamento que já foi concluído ou faturado como falta."
@@ -215,7 +241,7 @@ def cancelar_agendamento_paciente(
 
     # Aplica o status de cancelamento
     slot.tp_situacao = 'C'
-    db.commit()
+    await db.commit()
 
     return {
         "msg": "Agendamento cancelado com sucesso. A vaga foi devolvida à UBS.", 

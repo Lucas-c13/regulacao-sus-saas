@@ -2,56 +2,76 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from apscheduler.schedulers.background import BackgroundScheduler
+
+# Importações do Redis Cache
+from fastapi_cache import FastAPICache
+from fastapi_cache.backends.redis import RedisBackend
+from redis import asyncio as aioredis
+import os
+
+# Importações das Rotas e Middlewares
 from app.routes import auth, pacientes, agendamentos, profissionais, enderecos, feriados, ubs
 from app.core.middlewares import AuditoriaMiddleware
 from app.core.tasks import processar_no_shows, gerar_agendas_automaticamente
 
+
 # ==========================================
 # GESTOR DE CICLO DE VIDA (LIFESPAN)
 # ==========================================
-# IMPORTANTE: Esta função precisa existir ANTES de criarmos a variável 'app'
+# Aqui ligamos tudo ANTES da API aceitar requisições
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # O que acontece ao LIGAR o servidor:
+    print("🚀 A iniciar serviços de background...")
+    
+    # 1. Ligar o Cache Redis
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+    redis = aioredis.from_url(redis_url, encoding="utf8", decode_responses=True)
+    FastAPICache.init(RedisBackend(redis), prefix="fastapi-cache")
+    print("✅ Redis Cache Conectado.")
+
+    # 2. Ligar o Motor de Tarefas (APScheduler)
     scheduler = BackgroundScheduler()
     
-    # ⚠️ PARA TESTE: Vamos colocar para rodar a cada 1 minuto
-    # Em produção, usaremos: trigger="cron", hour=23, minute=59
+    # Tarefa 1: Processar Faltas
     scheduler.add_job(processar_no_shows, 'interval', minutes=1, id="job_no_show")
 
     # Tarefa 2: Gerador de Agendas em Massa 
-    # ⚠️ PARA TESTE: Vamos colocar para rodar a cada 1 minuto
-    # Em produção, usaremos: trigger="cron", hour=2, minute=0 (Madrugada)
     scheduler.add_job(gerar_agendas_automaticamente, 'interval', minutes=1, id="job_gerador_agendas")
     
     scheduler.start()
     print("⏰ Motor de Background Tasks (APScheduler) iniciado com 2 rotinas!")
     
-    yield # O FastAPI fica a rodar livremente aqui...
+    # A API fica online a partir daqui
+    yield 
     
+    # O que acontece ao DESLIGAR o servidor:
     scheduler.shutdown()
-    print("🛑 Motor de Background Tasks encerrado.")
+    await redis.close()
+    print("🛑 Serviços de Background encerrados.")
+
+
 # ==========================================
 # INICIALIZAÇÃO DA APLICAÇÃO
 # ==========================================
-# Agora sim, passamos o lifespan que já foi lido pelo Python logo acima
 app = FastAPI(title="SaaS Agendamento APS - Modular", lifespan=lifespan)
 
 # ==========================================
-# CONFIGURAÇÃO DE CORS (Preparando para o React)
+# CONFIGURAÇÃO DE CORS E MIDDLEWARES
 # ==========================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Em Produção, trocaremos para ["http://localhost:3000"]
+    allow_origins=["*"],  # Em Produção, limite isto ao IP do seu Frontend
     allow_credentials=True,
-    allow_methods=["*"],  # Permite GET, POST, PUT, PATCH, DELETE
-    allow_headers=["*"],  # Permite envio de Tokens de Autenticação
+    allow_methods=["*"], 
+    allow_headers=["*"], 
 )
 
-# Registro do Middleware de Auditoria
+# Registo do Middleware de Auditoria (Deve vir depois do CORS)
 app.add_middleware(AuditoriaMiddleware)
 
-# Registro dos Routers
+# ==========================================
+# REGISTO DAS ROTAS (ENDPOINTS)
+# ==========================================
 app.include_router(auth.router)
 app.include_router(pacientes.router)
 app.include_router(agendamentos.router)
@@ -62,4 +82,10 @@ app.include_router(ubs.router)
 
 @app.get("/")
 def home():
-    return {"status": "Online", "arquitetura": "Modular", "seguranca": "Ativa", "jobs": "Ativos"}
+    return {
+        "status": "Online", 
+        "arquitetura": "Modular & Async", 
+        "seguranca": "Ativa", 
+        "cache": "Redis Ativo",
+        "jobs": "Ativos"
+    }

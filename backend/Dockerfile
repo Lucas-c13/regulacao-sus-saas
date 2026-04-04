@@ -28,4 +28,4 @@ EXPOSE 8000
 
 # 9. Comando de arranque para Produção
 # O uvicorn vai rodar escutando em todos os IPs (0.0.0.0)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["gunicorn", "main:app", "--workers", "4", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--timeout", "120"]
