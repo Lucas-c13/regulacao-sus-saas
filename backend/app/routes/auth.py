@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
+
 from ..database.session import get_db
 from ..database import models
 from ..core.security import verificar_senha, criar_token
@@ -12,17 +14,22 @@ class VerificaAcessoRequest(BaseModel):
     cpf: str
 
 @router.post("/verificar-acessos")
-def verificar_acessos(dados: VerificaAcessoRequest, db: Session = Depends(get_db)):
+async def verificar_acessos(dados: VerificaAcessoRequest, db: AsyncSession = Depends(get_db)):
     """
     Passo 1: Recebe o CPF e devolve todas as prefeituras onde ele possui vínculo.
     """
-    # Fazemos um JOIN com a tabela Município para pegar o nome da Prefeitura
-    resultados = db.query(models.Profissional, models.Municipio.nome).join(
-        models.Municipio, models.Profissional.id_municipio == models.Municipio.id_municipio
-    ).filter(
-        models.Profissional.cpf == dados.cpf,
-        models.Profissional.sn_ativo == True
-    ).all()
+    # NOVO PADRÃO ASYNC: select() -> await db.execute() -> result.all()
+    stmt = (
+        select(models.Profissional, models.Municipio.nome)
+        .join(models.Municipio, models.Profissional.id_municipio == models.Municipio.id_municipio)
+        .where(
+            models.Profissional.cpf == dados.cpf,
+            models.Profissional.sn_ativo == True
+        )
+    )
+    
+    result = await db.execute(stmt)
+    resultados = result.all() # Retorna uma lista de tuplas (Profissional, nome_municipio)
 
     if not resultados:
         raise HTTPException(status_code=404, detail="CPF não encontrado ou utilizador inativo.")
@@ -38,20 +45,23 @@ def verificar_acessos(dados: VerificaAcessoRequest, db: Session = Depends(get_db
     return {"vinculos": vinculos}
 
 @router.post("/login")
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
     """
     Passo 2: Efetua o login num município específico.
-    Hack Sênior: Usamos o campo 'client_id' (Client ID) do Swagger para enviar o id_municipio.
     """
     id_municipio = form_data.client_id
     
     if not id_municipio:
         raise HTTPException(status_code=400, detail="É obrigatório informar a prefeitura (client_id).")
 
-    profissional = db.query(models.Profissional).filter(
+    # Substituição de db.query().filter().first() por await db.execute(select().where())
+    stmt_prof = select(models.Profissional).where(
         models.Profissional.cpf == form_data.username,
         models.Profissional.id_municipio == id_municipio
-    ).first()
+    )
+    
+    result_prof = await db.execute(stmt_prof)
+    profissional = result_prof.scalars().first() # scalars() extrai o objeto da tupla do banco
 
     if not profissional or not verificar_senha(form_data.password, profissional.senha_hash):
         raise HTTPException(status_code=401, detail="CPF, senha ou prefeitura incorretos.")
@@ -62,8 +72,10 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
         "id_municipio": str(profissional.id_municipio)
     })
     
-    # Devolvemos também o tema visual para o React pintar a tela na mesma hora
-    municipio = db.query(models.Municipio).filter(models.Municipio.id_municipio == id_municipio).first()
+    # Buscar o tema visual
+    stmt_mun = select(models.Municipio).where(models.Municipio.id_municipio == id_municipio)
+    result_mun = await db.execute(stmt_mun)
+    municipio = result_mun.scalars().first()
     
     return {
         "access_token": token, 

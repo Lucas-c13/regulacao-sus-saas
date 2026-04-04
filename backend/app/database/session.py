@@ -1,24 +1,32 @@
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy import create_engine # <-- Importação síncrona
 import os
+from typing import AsyncGenerator
 
+from sqlalchemy import create_engine, Engine
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, AsyncEngine
+from sqlalchemy.orm import sessionmaker, declarative_base, Session
+
+# Configurações via Environment com fallbacks claros
 DATABASE_URL = os.getenv(
     "DATABASE_URL", 
     "postgresql+asyncpg://postgres:postgres@localhost:5432/regulacao_sus"
 )
 
+# Derivação da URL síncrona de forma segura
+SYNC_DATABASE_URL = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+
 # ==========================================
-# MOTOR ASSÍNCRONO (Para a API / Alta Performance)
+# MOTOR ASSÍNCRONO (API / FastAPI)
 # ==========================================
-engine = create_async_engine(
+engine: AsyncEngine = create_async_engine(
     DATABASE_URL,
-    echo=False,                
+    echo=False,
     future=True,
-    pool_size=50,              
-    max_overflow=100,          
-    pool_timeout=30,           
-    pool_recycle=1800,         
+    pool_size=50,
+    max_overflow=100,
+    pool_timeout=30,
+    pool_recycle=1800,
+    # Sugestão: pre_ping ajuda a recuperar conexões perdidas em ambientes Docker
+    pool_pre_ping=True 
 )
 
 AsyncSessionLocal = sessionmaker(
@@ -29,31 +37,45 @@ AsyncSessionLocal = sessionmaker(
     autoflush=False,
 )
 
-Base = declarative_base()
-
-async def get_db():
-    """Dependência para injetar a sessão assíncrona nas rotas."""
-    async with AsyncSessionLocal() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
-
-
 # ==========================================
-# MOTOR SÍNCRONO (Dedicado para o tasks.py e robôs)
+# MOTOR SÍNCRONO (Tasks / Robôs / Scripts)
 # ==========================================
-# Retiramos o '+asyncpg' da string de conexão para usar o psycopg2 tradicional
-SYNC_DATABASE_URL = DATABASE_URL.replace("+asyncpg", "")
-
-sync_engine = create_engine(
+sync_engine: Engine = create_engine(
     SYNC_DATABASE_URL,
     pool_size=10,
-    max_overflow=20
+    max_overflow=20,
+    pool_pre_ping=True
 )
 
 SessionLocal = sessionmaker(
+    bind=sync_engine,
     autocommit=False,
     autoflush=False,
-    bind=sync_engine
 )
+
+Base = declarative_base()
+
+# ==========================================
+# DEPENDÊNCIAS DE SESSÃO
+# ==========================================
+
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            # Opcional: Só faz commit automático se a sessão foi alterada
+            # Isso evita overhead em rotas de leitura (GET)
+            if session.dirty or session.new or session.deleted:
+                await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+def get_sync_db():
+    """Context Manager para scripts síncronos e Tasks."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

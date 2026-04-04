@@ -34,7 +34,11 @@ services:
       - redis
     # Garante que a API consegue falar com o DB usando o nome do serviço
     environment:
-      - DATABASE_URL=postgresql://admin:admin_password@db:5432/db_regulacao
+      # ANTES:
+      # - DATABASE_URL=postgresql://admin:admin_password@db:5432/db_regulacao
+      
+      # DEPOIS:
+      - DATABASE_URL=postgresql+asyncpg://admin:admin_password@db:5432/db_regulacao
 
 volumes:
   postgres_data:
