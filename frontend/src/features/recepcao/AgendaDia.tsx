@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useAuth } from '../../core/AuthContext'; // <-- Importamos o AuthContext
 import { api } from '../../core/api';
 import { UserCheck, Clock, XCircle, AlertCircle } from 'lucide-react';
 
@@ -6,8 +7,6 @@ interface PacienteAgenda {
   id_item: string;
   hora: string;
   status: string;
-  // Como o nosso backend MVP atual retorna apenas a hora e o status,
-  // vamos simular um nome de paciente para o painel não ficar vazio.
   nome_ficticio?: string; 
 }
 
@@ -19,15 +18,24 @@ interface DadosAgenda {
 }
 
 export default function AgendaDia() {
+  const { ubsAtiva } = useAuth(); // <-- Pega a UBS selecionada lá no cabeçalho!
+  
   const [agenda, setAgenda] = useState<DadosAgenda | null>(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
 
   const buscarAgenda = async () => {
+    if (!ubsAtiva) return; // Se ainda não tem UBS, não faz a requisição
+    
+    setLoading(true);
+    setErro('');
+    
     try {
-      const response = await api.get('/agendamentos/minha-agenda');
+      // Passa a UBS ativa como parâmetro da Rota Sênior que você fez no backend
+      const response = await api.get('/agendamentos/minha-agenda', {
+        params: { id_ubs: ubsAtiva }
+      });
       
-      // Adicionando nomes fictícios apenas para efeito visual no MVP
       const nomes = ["Maria Silva", "João Santos", "Ana Oliveira", "Carlos Souza", "Beatriz Costa"];
       const dados = response.data;
       dados.pacientes = dados.pacientes.map((p: any, index: number) => ({
@@ -37,20 +45,21 @@ export default function AgendaDia() {
 
       setAgenda(dados);
     } catch (error) {
-      setErro('Não foi possível carregar a agenda de hoje.');
+      setErro('Não foi possível carregar a agenda de hoje para esta UBS.');
     } finally {
       setLoading(false);
     }
   };
 
+  // O "Segredo": Colocamos o 'ubsAtiva' como dependência. 
+  // Sempre que ele mudar lá no topo, o React vai refazer a busca automaticamente!
+  useEffect(() => {
+    buscarAgenda();
+  }, [ubsAtiva]); 
+
   const handleCheckIn = async (id_item: string) => {
     try {
-      // Chama o backend para alterar o status para 'A' (Chegou/Aguardando)
-      await api.patch(`/agendamentos/${id_item}/status`, {
-        novo_status: 'A'
-      });
-      
-      // Atualiza a tabela na tela sem precisar recarregar a página!
+      await api.patch(`/agendamentos/${id_item}/status`, { novo_status: 'A' });
       buscarAgenda();
     } catch (error) {
       alert("Erro ao realizar o check-in do paciente.");

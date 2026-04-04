@@ -11,17 +11,13 @@ def listar_minhas_ubs(
     db: Session = Depends(get_db), 
     usuario: dict = Depends(get_usuario_logado)
 ):
-    """
-    Lista todas as UBSs às quais o profissional logado tem acesso.
-    """
     id_profissional = usuario["id_profissional"]
 
-    # Faz o JOIN entre a UBS e a tabela de vínculo (UbsProfissional)
-    resultados = db.query(models.Ubs).join(
-        models.UbsProfissional, models.Ubs.id_ubs == models.UbsProfissional.id_ubs
+    # Usando models.UBS (maiúsculo) e removendo o sn_ativo que não existe nesta tabela
+    resultados = db.query(models.UBS).join(
+        models.UbsProfissional, models.UBS.id_ubs == models.UbsProfissional.id_ubs
     ).filter(
-        models.UbsProfissional.id_profissional == id_profissional,
-        models.Ubs.sn_ativo == True
+        models.UbsProfissional.id_profissional == id_profissional
     ).all()
 
     if not resultados:

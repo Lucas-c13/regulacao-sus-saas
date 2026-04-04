@@ -75,35 +75,34 @@ def listar_especialidades(db: Session = Depends(get_db)):
 
 @router.get("/minha-agenda")
 def listar_agenda_medico(
-    id_ubs: str,
-    db_tenant: tuple = Depends(get_tenant_db), # <--- Nossa injeção poderosa aqui
+    id_ubs: str, 
+    db: Session = Depends(get_db), # <-- Usamos o get_db normal e seguro
     usuario: dict = Depends(get_usuario_logado)
 ):
-    # Desempacota a tupla retornada pelo get_tenant_db
-    db, tenant_id = db_tenant
-    hoje = date.today()
-    
-    # Observe a segurança: Filtramos a Escala pelo Profissional logado 
-    # E garantimos silenciosamente que a UBS pertence ao Tenant (Município) dele
+    hoje = datetime.now().date()
+
+    # O JOIN Sênior: ItAgendaCentral -> AgendaCentral -> EscalaCentral
     pacientes = db.query(models.ItAgendaCentral).join(
-        models.AgendaCentral
+        models.AgendaCentral, models.ItAgendaCentral.id_agenda == models.AgendaCentral.id_agenda
     ).join(
-        models.EscalaCentral
-    ).join(
-        models.UBS, models.EscalaCentral.id_ubs == models.UBS.id_ubs
+        models.EscalaCentral, models.AgendaCentral.id_escala == models.EscalaCentral.id_escala
     ).filter(
         models.EscalaCentral.id_profissional == usuario["id_profissional"],
-        models.AgendamentoItem.id_ubs == id_ubs,
+        models.EscalaCentral.id_ubs == id_ubs, # <-- Filtra pela UBS selecionada no React!
         models.AgendaCentral.dt_agenda == hoje,
-        models.UBS.id_municipio == tenant_id 
-    ).all()
-    
+        models.AgendaCentral.sn_ativo == True
+    ).order_by(models.ItAgendaCentral.hr_agenda).all()
+
     return {
         "medico": usuario["sub"], 
         "data": hoje, 
         "total_pacientes": len(pacientes),
         "pacientes": [
-            {"hora": p.hr_agenda.strftime("%H:%M"), "status": p.tp_situacao} 
+            {
+                "id_item": str(p.id_item), # <-- O REACT PRECISA DISTO PARA O BOTÃO FUNCIONAR!
+                "hora": p.hr_agenda.strftime("%H:%M"), 
+                "status": p.tp_situacao or 'M'
+            } 
             for p in pacientes
         ]
     }
