@@ -12,7 +12,9 @@ import os
 # Importações das Rotas e Middlewares
 from app.routes import auth, pacientes, agendamentos, profissionais, enderecos, feriados, ubs
 from app.core.middlewares import AuditoriaMiddleware
-from app.core.tasks import processar_no_shows, gerar_agendas_automaticamente
+from app.core.tasks import disparar_lembretes_sms
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from contextlib import asynccontextmanager
 
 
 # ==========================================
@@ -49,7 +51,30 @@ async def lifespan(app: FastAPI):
     await redis.close()
     print("🛑 Serviços de Background encerrados.")
 
+scheduler = AsyncIOScheduler()
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Arranca o cron job que envia SMS todos os dias às 18:00
+    scheduler.add_job(
+        disparar_lembretes_sms, 
+        'cron', 
+        hour=18, 
+        minute=0, 
+        timezone='America/Sao_Paulo',
+        id='lembretes_diarios'
+    )
+    scheduler.start()
+    print("⏰ Motor de Lembretes APScheduler iniciado!")
+    
+    yield 
+    
+    # Desliga o cron job quando o servidor parar
+    scheduler.shutdown()
+    print("⏰ Motor de Lembretes desligado com segurança.")
+
+# Atualiza a declaração da tua app para incluir o lifespan:
+app = FastAPI(title="SaaS Regulação SUS", lifespan=lifespan)
 # ==========================================
 # INICIALIZAÇÃO DA APLICAÇÃO
 # ==========================================
