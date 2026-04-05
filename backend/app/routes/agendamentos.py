@@ -9,6 +9,12 @@ from ..database.session import get_db
 from ..database import models
 from ..schemas import schemas
 from ..core.security import get_usuario_logado
+from datetime import datetime, date
+from sqlalchemy import update
+from zoneinfo import ZoneInfo
+
+fuso_br = ZoneInfo('America/Sao_Paulo')
+
 
 router = APIRouter(prefix="/agendamentos", tags=["Agendamentos"])
 
@@ -246,4 +252,34 @@ async def cancelar_agendamento_paciente(
     return {
         "msg": "Agendamento cancelado com sucesso. A vaga foi devolvida à UBS.", 
         "novo_status": slot.tp_situacao
+    }
+
+@router.patch("/paciente/{id_paciente}/justificar-faltas")
+async def justificar_faltas_paciente(
+    id_paciente: str, 
+    db: AsyncSession = Depends(get_db),
+    usuario = Depends(get_usuario_logado)
+):
+    """
+    Desbloqueia o utente convertendo todas as suas faltas 'F' em 'FJ' (Falta Justificada).
+    """
+    stmt_update = (
+        update(models.ItAgendaCentral)
+        .where(
+            models.ItAgendaCentral.id_paciente == id_paciente,
+            models.ItAgendaCentral.tp_situacao == 'F'
+        )
+        .values(tp_situacao='FJ')
+    )
+    
+    resultado = await db.execute(stmt_update)
+    await db.commit()
+
+    if resultado.rowcount == 0:
+        raise HTTPException(status_code=404, detail="O utente não possui faltas pendentes para justificar.")
+
+    return {
+        "msg": "Faltas justificadas com sucesso. O utente foi desbloqueado no App.",
+        "faltas_perdoadas": resultado.rowcount,
+        "rececionista": usuario["sub"]
     }

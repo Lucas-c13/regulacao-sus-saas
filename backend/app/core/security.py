@@ -1,11 +1,11 @@
 from datetime import datetime, timedelta, timezone
 from jose import jwt, JWTError
 from passlib.context import CryptContext
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, status 
 from fastapi.security import OAuth2PasswordBearer
 import os
 from dotenv import load_dotenv
-from ..database.session import get_db
+from app.database.session import get_db
 
 load_dotenv()
 
@@ -45,5 +45,4 @@ def get_tenant_db(
             detail="Acesso Negado: Token não possui vínculo com um Município (Tenant)."
         )
         
-    # Retorna uma tupla contendo o DB e o Tenant ID extraído do Token
     return db, tenant_id
