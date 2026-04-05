@@ -15,6 +15,8 @@ from app.core.middlewares import AuditoriaMiddleware
 from app.core.tasks import disparar_lembretes_sms
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from contextlib import asynccontextmanager
+from app.routes import escalas 
+from app.core.middlewares import AuditoriaMiddleware
 
 
 # ==========================================
@@ -104,6 +106,8 @@ app.include_router(profissionais.router)
 app.include_router(enderecos.router)
 app.include_router(feriados.router)
 app.include_router(ubs.router)
+app.include_router(escalas.router)
+app.add_middleware(AuditoriaMiddleware)
 
 @app.get("/")
 def home():

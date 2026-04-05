@@ -1,20 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import func
+from sqlalchemy import func, update, and_
 from datetime import datetime, date, time, timedelta
 from typing import List
+from zoneinfo import ZoneInfo
 
 from ..database.session import get_db
 from ..database import models
 from ..schemas import schemas
 from ..core.security import get_usuario_logado
-from datetime import datetime, date
-from sqlalchemy import update
-from zoneinfo import ZoneInfo
+
+import json
+from ..core.middlewares import redis_client
 
 fuso_br = ZoneInfo('America/Sao_Paulo')
-
 
 router = APIRouter(prefix="/agendamentos", tags=["Agendamentos"])
 
@@ -44,45 +44,78 @@ def gerar_slots_tempo(hr_inicio: time, hr_fim: time, intervalo_min: int):
 # ROTAS
 # ==========================================
 
-@router.post("/")
-async def realizar_agendamento(dados: schemas.NovoAgendamentoApp, db: AsyncSession = Depends(get_db)):
-    # 1. Trava de Absenteísmo
-    stmt_paciente = select(models.Paciente).filter_by(id_paciente=dados.id_paciente)
+@router.post("/", status_code=status.HTTP_201_CREATED)
+async def realizar_agendamento(
+    dados: schemas.NovoAgendamentoApp, 
+    db: AsyncSession = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado) # Injeção do utilizador logado para Tenant Enforcement
+):
+    tenant_id = usuario.get("tenant_id")
+
+    # 1. Validação de Tenant e Paciente
+    stmt_paciente = select(models.Paciente).filter(
+        and_(
+            models.Paciente.id_paciente == dados.id_paciente,
+            models.Paciente.id_municipio == tenant_id # Isolamento de Tenant
+        )
+    )
     paciente = (await db.execute(stmt_paciente)).scalar_one_or_none()
     
     if not paciente:
-        raise HTTPException(status_code=404, detail="Paciente não encontrado.")
+        raise HTTPException(status_code=404, detail="Utente não encontrado no seu município.")
         
-    stmt_municipio = select(models.Municipio).filter_by(id_municipio=paciente.id_municipio)
+    stmt_municipio = select(models.Municipio).filter_by(id_municipio=tenant_id)
     municipio = (await db.execute(stmt_municipio)).scalar_one_or_none()
     
+    # 2. Trava de Absenteísmo com Janela de Tempo
     if municipio and municipio.config_absenteismo:
         limite_faltas = municipio.config_absenteismo.get("faltas_limite", 3)
+        dias_janela = municipio.config_absenteismo.get("dias_janela", 30)
+        data_corte = datetime.now(fuso_br).date() - timedelta(days=dias_janela)
         
-        # Contagem de faltas usando func.count para otimizar a query
-        stmt_faltas = select(func.count(models.ItAgendaCentral.id_item)).filter(
+        # Contagem de faltas estritamente dentro da janela de tempo definida (ex: últimos 30 dias)
+        stmt_faltas = select(func.count(models.ItAgendaCentral.id_item)).join(
+            models.AgendaCentral, models.ItAgendaCentral.id_agenda == models.AgendaCentral.id_agenda
+        ).filter(
             models.ItAgendaCentral.id_paciente == dados.id_paciente,
-            models.ItAgendaCentral.tp_situacao == 'F'
+            models.ItAgendaCentral.tp_situacao == 'F',
+            models.AgendaCentral.dt_agenda >= data_corte
         )
         faltas_cometidas = (await db.execute(stmt_faltas)).scalar()
         
         if faltas_cometidas >= limite_faltas:
-            raise HTTPException(status_code=403, detail="Bloqueio por absenteísmo.")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, 
+                detail=f"Bloqueio por absenteísmo: O utente excedeu o limite de {limite_faltas} faltas nos últimos {dias_janela} dias."
+            )
 
-    # 2. Iniciar Transação e Trava de Overbooking (Pessimistic Lock)
+    # 3. Iniciar Transação e Trava de Overbooking (Pessimistic Lock)
     async with db.begin():
+        # Garantir que a escala pertence ao município do utilizador logado
+        stmt_escala = select(models.EscalaCentral).filter(
+            models.EscalaCentral.id_escala == dados.id_escala,
+            models.EscalaCentral.id_municipio == tenant_id
+        )
+        escala_valida = (await db.execute(stmt_escala)).scalar_one_or_none()
+        if not escala_valida:
+            raise HTTPException(status_code=403, detail="Acesso negado a esta escala.")
+
         stmt_agenda = select(models.AgendaCentral).filter(
             models.AgendaCentral.id_escala == dados.id_escala,
             models.AgendaCentral.dt_agenda == dados.data_agendamento
-        ).with_for_update() # O Lock acontece aqui!
+        ).with_for_update() # Lock de registo ativo
         
         agenda_dia = (await db.execute(stmt_agenda)).scalar_one_or_none()
 
         # Se a agenda do dia não existe, cria o "molde"
         if not agenda_dia:
-            agenda_dia = models.AgendaCentral(id_escala=dados.id_escala, dt_agenda=dados.data_agendamento)
+            agenda_dia = models.AgendaCentral(
+                id_escala=dados.id_escala, 
+                dt_agenda=dados.data_agendamento,
+                id_municipio=tenant_id
+            )
             db.add(agenda_dia)
-            await db.flush() # Flush envia para o banco para gerar o ID, mas não commita ainda
+            await db.flush()
             
         # Verifica se o slot exato já foi ocupado (Evita Race Condition)
         stmt_slot = select(models.ItAgendaCentral).filter(
@@ -93,9 +126,12 @@ async def realizar_agendamento(dados: schemas.NovoAgendamentoApp, db: AsyncSessi
         slot_ocupado = (await db.execute(stmt_slot)).first()
         
         if slot_ocupado:
-            raise HTTPException(status_code=409, detail="Horário reservado por outro cidadão neste momento.")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, 
+                detail="Horário já reservado por outro cidadão."
+            )
 
-        # 3. Confirma o Agendamento
+        # 4. Confirma o Agendamento
         novo_slot = models.ItAgendaCentral(
             id_agenda=agenda_dia.id_agenda, 
             hr_agenda=dados.hora_vaga,
@@ -103,29 +139,52 @@ async def realizar_agendamento(dados: schemas.NovoAgendamentoApp, db: AsyncSessi
             tp_situacao='M'
         )
         db.add(novo_slot)
+        # --- 5. INVALIDAÇÃO DE CACHE ---
+    # Apaga o cache para forçar a API a ir ao banco na próxima leitura
+    try:
+        cache_key = f"vagas:{tenant_id}:{dados.id_escala}:{dados.data_agendamento}"
+        await redis_client.delete(cache_key)
+    except Exception:
+        pass
+
+    return {"msg": "Agendamento confirmado!", "id_item": str(novo_slot.id_item)}
         
-    # O commit é automático ao sair do bloco `async with db.begin()`
-    return {"msg": "Agendamento confirmado!", "id_item": novo_slot.id_item}
 
 
 @router.patch("/{id_item}/status")
-async def atualizar_status_recepcao(id_item: str, dados: schemas.AtualizaStatusAgendamento, db: AsyncSession = Depends(get_db), usuario = Depends(get_usuario_logado)):
-    stmt = select(models.ItAgendaCentral).filter_by(id_item=id_item)
+async def atualizar_status_recepcao(
+    id_item: str, 
+    dados: schemas.AtualizaStatusAgendamento, 
+    db: AsyncSession = Depends(get_db), 
+    usuario: dict = Depends(get_usuario_logado)
+):
+    # Tenant Enforcement cruzando com a AgendaCentral
+    stmt = select(models.ItAgendaCentral).join(
+        models.AgendaCentral, models.ItAgendaCentral.id_agenda == models.AgendaCentral.id_agenda
+    ).filter(
+        models.ItAgendaCentral.id_item == id_item,
+        models.AgendaCentral.id_municipio == usuario.get("tenant_id")
+    )
+    
     slot = (await db.execute(stmt)).scalar_one_or_none()
     
     if not slot:
-        raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
+        raise HTTPException(status_code=404, detail="Agendamento não encontrado ou sem permissão de acesso.")
         
     slot.tp_situacao = dados.novo_status
     await db.commit()
     
-    return {"msg": "Status atualizado", "novo_status": slot.tp_situacao, "executor": usuario["sub"]}
+    return {"msg": "Status atualizado", "novo_status": slot.tp_situacao, "executor": usuario.get("sub")}
 
 
 @router.get("/especialidades")
-async def listar_especialidades(db: AsyncSession = Depends(get_db)):
+async def listar_especialidades(
+    db: AsyncSession = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado)
+):
+    # Asumindo que as especialidades são globais, caso sejam por município, adicione o filtro:
+    # .filter_by(is_livre_demanda=True, id_municipio=usuario.get("tenant_id"))
     stmt = select(models.Especialidade).filter_by(is_livre_demanda=True)
-    # scalars().all() extrai os objetos da tupla do SQLAlchemy
     especialidades = (await db.execute(stmt)).scalars().all() 
     return [{"id_especialidade": e.id_especialidade, "nome": e.nome} for e in especialidades]
 
@@ -136,16 +195,16 @@ async def listar_agenda_medico(
     db: AsyncSession = Depends(get_db),
     usuario: dict = Depends(get_usuario_logado)
 ):
-    hoje = datetime.now().date()
+    hoje = datetime.now(fuso_br).date()
 
-    # JOIN no novo formato do SQLAlchemy 2.0
     stmt = select(models.ItAgendaCentral).join(
         models.AgendaCentral, models.ItAgendaCentral.id_agenda == models.AgendaCentral.id_agenda
     ).join(
         models.EscalaCentral, models.AgendaCentral.id_escala == models.EscalaCentral.id_escala
     ).filter(
-        models.EscalaCentral.id_profissional == usuario["id_profissional"],
-        models.EscalaCentral.id_ubs == id_ubs, 
+        models.EscalaCentral.id_profissional == usuario.get("id_profissional"),
+        models.EscalaCentral.id_ubs == id_ubs,
+        models.EscalaCentral.id_municipio == usuario.get("tenant_id"), # Segurança multi-tenant
         models.AgendaCentral.dt_agenda == hoje,
         models.AgendaCentral.sn_ativo == True
     ).order_by(models.ItAgendaCentral.hr_agenda)
@@ -153,7 +212,7 @@ async def listar_agenda_medico(
     pacientes = (await db.execute(stmt)).scalars().all()
 
     return {
-        "medico": usuario["sub"], 
+        "medico": usuario.get("sub"), 
         "data": hoje, 
         "total_pacientes": len(pacientes),
         "pacientes": [
@@ -171,26 +230,36 @@ async def listar_agenda_medico(
 async def listar_horarios_disponiveis(
     id_escala: str = Query(..., description="ID da Escala Central (O molde)"),
     data_consulta: date = Query(..., description="Data desejada para o agendamento"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado)
 ):
-    # 1. Buscar a Escala (Molde)
-    stmt_escala = select(models.EscalaCentral).filter_by(id_escala=id_escala)
+    tenant_id = usuario.get("tenant_id")
+    
+    # --- 1. TENTAR LER DO CACHE (REDIS) ---
+    # Chave única para este município, escala e dia
+    cache_key = f"vagas:{tenant_id}:{id_escala}:{data_consulta}"
+    
+    try:
+        cached_data = await redis_client.get(cache_key)
+        if cached_data:
+            # Resposta em < 1ms, o PostgreSQL nem chega a ser incomodado
+            return json.loads(cached_data)
+    except Exception:
+        pass # Se o Redis falhar por algum motivo, ignoramos e vamos ao banco
+
+    # --- 2. LÓGICA ORIGINAL DO POSTGRESQL ---
+    stmt_escala = select(models.EscalaCentral).filter_by(
+        id_escala=id_escala, id_municipio=tenant_id
+    )
     escala = (await db.execute(stmt_escala)).scalar_one_or_none()
     
     if not escala:
         raise HTTPException(status_code=404, detail="Escala não encontrada.")
-
-    # Trava Sênior
     if not escala.is_disponivel_app:
-        raise HTTPException(
-            status_code=403, 
-            detail="Esta agenda é exclusiva para marcação presencial na recepção da UBS."
-        )
+        raise HTTPException(status_code=403, detail="Agenda exclusiva para marcação presencial.")
 
-    # 2. Gerar TODOS os slots em memória
     todos_slots = list(gerar_slots_tempo(escala.hr_inicio, escala.hr_fim, escala.tempo_medio_min))
     
-    # 3. Verificar se já existe uma agenda gerada para este dia
     stmt_agenda = select(models.AgendaCentral).filter(
         models.AgendaCentral.id_escala == id_escala,
         models.AgendaCentral.dt_agenda == data_consulta,
@@ -199,70 +268,93 @@ async def listar_horarios_disponiveis(
     agenda_dia = (await db.execute(stmt_agenda)).scalar_one_or_none()
 
     slots_ocupados = set() 
-
     if agenda_dia:
-        # Buscamos apenas a hr_agenda para economizar memória (Query Otimizada)
         stmt_itens = select(models.ItAgendaCentral.hr_agenda).filter(
             models.ItAgendaCentral.id_agenda == agenda_dia.id_agenda,
             models.ItAgendaCentral.tp_situacao.in_(['M', 'A', 'F']) 
         )
         itens_ocupados = (await db.execute(stmt_itens)).scalars().all()
-        
-        # O scalars().all() já retorna a lista limpa de datetime.time
         slots_ocupados = set(itens_ocupados)
 
-    # 4. Cruzamento de dados 
     slots_disponiveis = [
         slot.strftime("%H:%M") for slot in todos_slots if slot not in slots_ocupados
     ]
 
-    return {
+    resultado = {
         "id_escala": id_escala,
-        "data_consulta": data_consulta,
+        "data_consulta": data_consulta.isoformat(), # Convertido para string para o JSON
         "tempo_atendimento_min": escala.tempo_medio_min,
         "total_vagas_livres": len(slots_disponiveis),
         "horarios_disponiveis": slots_disponiveis
     }
 
+    # --- 3. GRAVAR NO CACHE ---
+    # Guarda o cálculo pesado no Redis por 60 segundos
+    try:
+        await redis_client.setex(cache_key, 60, json.dumps(resultado))
+        print("🐢 [CACHE MISS] Consulta pesada no PostgreSQL. Guardando no Redis...")
+    except Exception:
+        pass 
+
+    return resultado
+
 
 @router.patch("/{id_item}/cancelar")
 async def cancelar_agendamento_paciente(
-    id_item: str, 
-    db: AsyncSession = Depends(get_db)
+    id_item: str, db: AsyncSession = Depends(get_db), usuario: dict = Depends(get_usuario_logado)
 ):
-    stmt = select(models.ItAgendaCentral).filter_by(id_item=id_item)
-    slot = (await db.execute(stmt)).scalar_one_or_none()
+    tenant_id = usuario.get("tenant_id")
+    
+    # Seleciona o Slot E a Agenda para podermos limpar o cache correto
+    stmt = select(models.ItAgendaCentral, models.AgendaCentral).join(
+        models.AgendaCentral, models.ItAgendaCentral.id_agenda == models.AgendaCentral.id_agenda
+    ).filter(
+        models.ItAgendaCentral.id_item == id_item,
+        models.AgendaCentral.id_municipio == tenant_id
+    )
+    resultado = (await db.execute(stmt)).first()
 
-    if not slot:
+    if not resultado:
         raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
+        
+    slot, agenda = resultado # Desempacota o tuplo retornado pelo select
         
     if slot.tp_situacao == 'C':
         raise HTTPException(status_code=400, detail="Este agendamento já foi cancelado.")
-        
     if slot.tp_situacao in ['A', 'F']:
-        raise HTTPException(
-            status_code=400, 
-            detail="Não é possível cancelar um agendamento que já foi concluído ou faturado como falta."
-        )
+        raise HTTPException(status_code=400, detail="Não é possível cancelar uma consulta concluída.")
 
-    # Aplica o status de cancelamento
     slot.tp_situacao = 'C'
     await db.commit()
+
+    # --- INVALIDAÇÃO DE CACHE ---
+    try:
+        cache_key = f"vagas:{tenant_id}:{agenda.id_escala}:{agenda.dt_agenda}"
+        await redis_client.delete(cache_key)
+    except Exception:
+        pass
 
     return {
         "msg": "Agendamento cancelado com sucesso. A vaga foi devolvida à UBS.", 
         "novo_status": slot.tp_situacao
     }
 
+
 @router.patch("/paciente/{id_paciente}/justificar-faltas")
 async def justificar_faltas_paciente(
     id_paciente: str, 
     db: AsyncSession = Depends(get_db),
-    usuario = Depends(get_usuario_logado)
+    usuario: dict = Depends(get_usuario_logado)
 ):
-    """
-    Desbloqueia o utente convertendo todas as suas faltas 'F' em 'FJ' (Falta Justificada).
-    """
+    # Para garantir a segurança usando update, cruzamos primeiro com uma subquery ou filtramos via modelagem direta
+    # Para simplicidade e segurança, confirmamos primeiro se o utente pertence à base do município:
+    stmt_paciente = select(models.Paciente.id_paciente).filter_by(
+        id_paciente=id_paciente, 
+        id_municipio=usuario.get("tenant_id")
+    )
+    if not (await db.execute(stmt_paciente)).scalar_one_or_none():
+        raise HTTPException(status_code=403, detail="Acesso negado a este utente.")
+
     stmt_update = (
         update(models.ItAgendaCentral)
         .where(
@@ -279,7 +371,7 @@ async def justificar_faltas_paciente(
         raise HTTPException(status_code=404, detail="O utente não possui faltas pendentes para justificar.")
 
     return {
-        "msg": "Faltas justificadas com sucesso. O utente foi desbloqueado no App.",
+        "msg": "Faltas justificadas com sucesso. O utente foi desbloqueado na App.",
         "faltas_perdoadas": resultado.rowcount,
-        "rececionista": usuario["sub"]
+        "rececionista": usuario.get("sub")
     }

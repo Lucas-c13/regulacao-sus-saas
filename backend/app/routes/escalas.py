@@ -1,0 +1,117 @@
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from sqlalchemy import and_
+from typing import List
+
+from ..database.session import get_db
+from ..database import models
+from ..schemas import schemas
+from ..core.security import get_usuario_logado
+
+router = APIRouter(prefix="/escalas", tags=["Escalas"])
+
+@router.post("/", response_model=schemas.EscalaCentralResponse, status_code=status.HTTP_201_CREATED)
+async def criar_escala(
+    dados: schemas.EscalaCentralCreate,
+    db: AsyncSession = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado)
+):
+    tenant_id = usuario.get("tenant_id")
+
+    # 1. Validar se a UBS pertence ao Município (Tenant Enforcement)
+    stmt_ubs = select(models.UBS).filter_by(id=dados.id_ubs, id_municipio=tenant_id)
+    ubs = (await db.execute(stmt_ubs)).scalar_one_or_none()
+    if not ubs:
+        raise HTTPException(status_code=403, detail="Acesso negado: UBS não encontrada no seu município.")
+
+    # 2. Validar se o profissional pertence ao Município
+    stmt_prof = select(models.Profissional).filter_by(id_profissional=dados.id_profissional, id_municipio=tenant_id)
+    profissional = (await db.execute(stmt_prof)).scalar_one_or_none()
+    if not profissional:
+        raise HTTPException(status_code=404, detail="Profissional não encontrado no seu município.")
+
+    # 3. Lógica de Negócio: Prevenir sobreposição (O mesmo médico não pode ter duas escalas simultâneas na mesma UBS)
+    stmt_sobreposicao = select(models.EscalaCentral).filter(
+        and_(
+            models.EscalaCentral.id_profissional == dados.id_profissional,
+            models.EscalaCentral.id_ubs == dados.id_ubs,
+            models.EscalaCentral.sn_ativo == True,
+            models.EscalaCentral.id_municipio == tenant_id,
+            # Verifica intersecção de horários
+            models.EscalaCentral.hr_inicio < dados.hr_fim,
+            models.EscalaCentral.hr_fim > dados.hr_inicio
+        )
+    )
+    sobreposicao = (await db.execute(stmt_sobreposicao)).first()
+    
+    if sobreposicao:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, 
+            detail="O profissional já possui uma escala ativa que se sobrepõe a este horário nesta UBS."
+        )
+
+    # 4. Criar a Escala
+    nova_escala = models.EscalaCentral(
+        id_ubs=dados.id_ubs,
+        id_profissional=dados.id_profissional,
+        hr_inicio=dados.hr_inicio,
+        hr_fim=dados.hr_fim,
+        tempo_medio_min=dados.tempo_medio_min,
+        is_disponivel_app=dados.is_disponivel_app,
+        id_municipio=tenant_id,
+        sn_ativo=True
+    )
+
+    db.add(nova_escala)
+    await db.commit()
+    await db.refresh(nova_escala)
+
+    return nova_escala
+
+
+@router.get("/", response_model=List[schemas.EscalaCentralResponse])
+async def listar_escalas(
+    id_ubs: int = None,
+    db: AsyncSession = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado)
+):
+    """
+    Lista as escalas do município. Se id_ubs for fornecido, filtra por UBS.
+    """
+    tenant_id = usuario.get("tenant_id")
+    
+    query = select(models.EscalaCentral).filter(
+        models.EscalaCentral.id_municipio == tenant_id,
+        models.EscalaCentral.sn_ativo == True
+    )
+
+    if id_ubs:
+        query = query.filter(models.EscalaCentral.id_ubs == id_ubs)
+
+    resultados = (await db.execute(query)).scalars().all()
+    return resultados
+
+
+@router.patch("/{id_escala}/desativar")
+async def desativar_escala(
+    id_escala: str,
+    db: AsyncSession = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado)
+):
+    """
+    Desativa (Soft Delete) uma escala para que não gere mais agendas futuras.
+    """
+    stmt = select(models.EscalaCentral).filter_by(
+        id_escala=id_escala, 
+        id_municipio=usuario.get("tenant_id")
+    )
+    escala = (await db.execute(stmt)).scalar_one_or_none()
+
+    if not escala:
+        raise HTTPException(status_code=404, detail="Escala não encontrada ou sem permissão de acesso.")
+
+    escala.sn_ativo = False
+    await db.commit()
+
+    return {"msg": "Escala desativada com sucesso. Não irá gerar vagas para datas futuras."}

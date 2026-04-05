@@ -1,5 +1,5 @@
-from pydantic import BaseModel, field_validator
-from datetime import date, time, datetime # <-- Adicionado o datetime aqui!
+from pydantic import BaseModel, field_validator, Field
+from datetime import date, time, datetime 
 from typing import Optional
 
 class CadastroPacienteApp(BaseModel):
@@ -38,3 +38,22 @@ class NovoProfissionalUBS(BaseModel):
     cpf: str
     senha: str
     id_ubs: str # A UBS para onde o novo funcionário vai ser designado
+
+class EscalaCentralBase(BaseModel):
+    id_ubs: str
+    id_profissional: str
+    hr_inicio: time = Field(..., description="Hora de início do turno (ex: 08:00)")
+    hr_fim: time = Field(..., description="Hora de fim do turno (ex: 17:00)")
+    tempo_medio_min: int = Field(..., gt=0, description="Duração de cada consulta em minutos (ex: 15)")
+    is_disponivel_app: bool = Field(default=True, description="Se a vaga vai para a App ou fica exclusiva na receção")
+
+class EscalaCentralCreate(EscalaCentralBase):
+    pass
+
+class EscalaCentralResponse(EscalaCentralBase):
+    id_escala: str
+    id_municipio: str
+    sn_ativo: bool
+
+    class Config:
+        from_attributes = True
