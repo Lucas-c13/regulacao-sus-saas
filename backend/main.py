@@ -1,7 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from apscheduler.schedulers.background import BackgroundScheduler
+
+# Importações do Agendador (Workers em background)
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.triggers.cron import CronTrigger
 
 # Importações do Redis Cache
 from fastapi_cache import FastAPICache
@@ -10,19 +14,21 @@ from redis import asyncio as aioredis
 import os
 
 # Importações das Rotas e Middlewares
-from app.routes import auth, pacientes, agendamentos, profissionais, enderecos, feriados, ubs
-from app.core.middlewares import AuditoriaMiddleware
-from app.core.tasks import disparar_lembretes_sms
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from contextlib import asynccontextmanager
-from app.routes import escalas 
+from app.routes import auth, pacientes, agendamentos, profissionais, enderecos, feriados, ubs, escalas
 from app.core.middlewares import AuditoriaMiddleware
 
+# Importações das Tarefas (Workers)
+from app.core.tasks import (
+    disparar_lembretes_sms,
+    processar_fila_auditoria,
+    gerar_agendas_futuras
+)
 
 # ==========================================
-# GESTOR DE CICLO DE VIDA (LIFESPAN)
+# GESTOR DE CICLO DE VIDA (LIFESPAN) E WORKERS
 # ==========================================
-# Aqui ligamos tudo ANTES da API aceitar requisições
+scheduler = AsyncIOScheduler()
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("🚀 A iniciar serviços de background...")
@@ -33,17 +39,37 @@ async def lifespan(app: FastAPI):
     FastAPICache.init(RedisBackend(redis), prefix="fastapi-cache")
     print("✅ Redis Cache Conectado.")
 
-    # 2. Ligar o Motor de Tarefas (APScheduler)
-    scheduler = BackgroundScheduler()
+    # 2. Agendar Tarefas (Workers)
     
-    # Tarefa 1: Processar Faltas
-    scheduler.add_job(processar_no_shows, 'interval', minutes=1, id="job_no_show")
+    # Tarefa A: Bulk Insert da Auditoria (Limpa o Redis a cada 15 segundos)
+    scheduler.add_job(
+        processar_fila_auditoria, 
+        trigger=IntervalTrigger(seconds=15),
+        id="auditoria_worker",
+        replace_existing=True
+    )
 
-    # Tarefa 2: Gerador de Agendas em Massa 
-    scheduler.add_job(gerar_agendas_automaticamente, 'interval', minutes=1, id="job_gerador_agendas")
+    # Tarefa B: Fatiador Automático de Escalas (Roda de madrugada para gerar vagas)
+    scheduler.add_job(
+        gerar_agendas_futuras, 
+        trigger=CronTrigger(hour=2, minute=0), 
+        id="job_gerador_agendas",
+        replace_existing=True
+    )
     
+    # Tarefa C: Lembretes SMS (Roda todos os dias às 18:00)
+    scheduler.add_job(
+        disparar_lembretes_sms, 
+        trigger=CronTrigger(hour=18, minute=0, timezone='America/Sao_Paulo'),
+        id='lembretes_diarios',
+        replace_existing=True
+    )
+
+    # (Opcional) Tarefa D: Processar No-Shows (Podes adicionar aqui se já tiveres a função)
+    # scheduler.add_job(processar_no_shows, trigger=IntervalTrigger(minutes=1), id="job_no_show")
+
     scheduler.start()
-    print("⏰ Motor de Background Tasks (APScheduler) iniciado com 2 rotinas!")
+    print("⏰ Motor de Background Tasks (APScheduler) iniciado com sucesso!")
     
     # A API fica online a partir daqui
     yield 
@@ -51,32 +77,9 @@ async def lifespan(app: FastAPI):
     # O que acontece ao DESLIGAR o servidor:
     scheduler.shutdown()
     await redis.close()
-    print("🛑 Serviços de Background encerrados.")
+    print("🛑 Serviços de Background encerrados com segurança.")
 
-scheduler = AsyncIOScheduler()
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Arranca o cron job que envia SMS todos os dias às 18:00
-    scheduler.add_job(
-        disparar_lembretes_sms, 
-        'cron', 
-        hour=18, 
-        minute=0, 
-        timezone='America/Sao_Paulo',
-        id='lembretes_diarios'
-    )
-    scheduler.start()
-    print("⏰ Motor de Lembretes APScheduler iniciado!")
-    
-    yield 
-    
-    # Desliga o cron job quando o servidor parar
-    scheduler.shutdown()
-    print("⏰ Motor de Lembretes desligado com segurança.")
-
-# Atualiza a declaração da tua app para incluir o lifespan:
-app = FastAPI(title="SaaS Regulação SUS", lifespan=lifespan)
 # ==========================================
 # INICIALIZAÇÃO DA APLICAÇÃO
 # ==========================================
@@ -87,13 +90,13 @@ app = FastAPI(title="SaaS Agendamento APS - Modular", lifespan=lifespan)
 # ==========================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Em Produção, limite isto ao IP do seu Frontend
+    allow_origins=["*"],  # Em Produção, limite isto ao domínio do Frontend App/Web
     allow_credentials=True,
     allow_methods=["*"], 
     allow_headers=["*"], 
 )
 
-# Registo do Middleware de Auditoria (Deve vir depois do CORS)
+# Registo do Middleware de Auditoria (Apenas uma vez)
 app.add_middleware(AuditoriaMiddleware)
 
 # ==========================================
@@ -107,7 +110,6 @@ app.include_router(enderecos.router)
 app.include_router(feriados.router)
 app.include_router(ubs.router)
 app.include_router(escalas.router)
-app.add_middleware(AuditoriaMiddleware)
 
 @app.get("/")
 def home():

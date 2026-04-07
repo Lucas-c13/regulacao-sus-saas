@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, date, time # Importações corrigidas
 from typing import Optional
-from sqlalchemy import String, ForeignKey, DateTime, Date, Time, Boolean, Integer, UniqueConstraint, func
+from sqlalchemy import String, ForeignKey, DateTime, Date, Time, Boolean, Integer, UniqueConstraint, func, Column
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import JSONB
 from .session import Base
@@ -40,7 +40,7 @@ class Profissional(Base):
     senha_hash: Mapped[str] = mapped_column(String(255))
     sn_ativo: Mapped[bool] = mapped_column(Boolean, default=True)
     dt_cadastro: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-
+    is_senha_provisoria = Column(Boolean, default=False, nullable=False)
     # Garante que o CPF é único dentro do mesmo município
     __table_args__ = (UniqueConstraint('id_municipio', 'cpf', name='uix_municipio_cpf'),)
 
@@ -84,6 +84,7 @@ class Paciente(Base):
     is_validado_sus: Mapped[bool] = mapped_column(Boolean, default=False)
     dt_aceite_lgpd: Mapped[datetime] = mapped_column(DateTime) 
     dt_cadastro: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    is_senha_provisoria = Column(Boolean, default=False, nullable=False)
 
 # ==========================================
 # 3. MOTOR DE AGENDAMENTO (CORE)

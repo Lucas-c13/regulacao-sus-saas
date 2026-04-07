@@ -63,7 +63,6 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
         )
 
     # 1. Buscar o profissional pelo CPF e Município
-    # Convertemos para UUID se o banco exigir, ou passamos a string se o driver aceitar
     stmt_prof = select(models.Profissional).where(
         models.Profissional.cpf == form_data.username,
         models.Profissional.id_municipio == id_municipio_req,
@@ -80,13 +79,33 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
             detail="CPF, senha ou município incorretos."
         )
 
+    # ------------------------------------------------------------------
+    # NOVO: VALIDAÇÃO FIRST-LOGIN (Trava de Redefinição Zero Trust)
+    # ------------------------------------------------------------------
+    if profissional.is_senha_provisoria:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="FIRST_LOGIN_RESET_REQUIRED"
+        )
+
+    # ------------------------------------------------------------------
+    # NOVO: BUSCAR VÍNCULO UBS E PERMISSÕES (Para injetar no Token)
+    # ------------------------------------------------------------------
+    stmt_vinculo = select(models.UbsProfissional).where(
+        models.UbsProfissional.id_profissional == profissional.id_profissional
+    ).limit(1) # Pega a principal
+    result_vinculo = await db.execute(stmt_vinculo)
+    vinculo = result_vinculo.scalars().first()
+
     # 3. Gerar o Payload do Token (VITAL para o Tenant Enforcement)
-    # A chave 'tenant_id' é a que usamos nos filtros WHERE das outras rotas
+    # Agora o token carrega a UBS e as permissões conforme exigido no PDF
     payload = {
         "sub": profissional.cpf,
         "nome": profissional.nome,
         "id_profissional": str(profissional.id_profissional),
-        "tenant_id": str(profissional.id_municipio) 
+        "tenant_id": str(profissional.id_municipio),
+        "id_ubs": str(vinculo.id_ubs) if vinculo else None,
+        "permissoes": vinculo.permissoes if vinculo else {}
     }
     
     token = criar_token(payload)
@@ -101,7 +120,9 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
         "token_type": "bearer",
         "usuario": {
             "nome": profissional.nome,
-            "id_profissional": profissional.id_profissional
+            "id_profissional": profissional.id_profissional,
+            "id_ubs": vinculo.id_ubs if vinculo else None,
+            "permissoes": vinculo.permissoes if vinculo else {}
         },
         "municipio": {
             "nome": municipio.nome if municipio else "Desconhecido",
