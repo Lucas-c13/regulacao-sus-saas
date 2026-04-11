@@ -7,6 +7,7 @@ from sqlalchemy.future import select
 from app.core.middlewares import redis_client 
 from app.database.session import SessionLocal
 from app.database import models
+from app.services.feriados_service import consultar_feriados_nacionais
 
 logger = logging.getLogger("Workers")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -71,10 +72,27 @@ async def gerar_agendas_futuras():
         data_atual = datetime.now().date()
         dias_a_gerar = 30
         
+        # --- CARREGA FERIADOS EM MEMÓRIA UMA ÚNICA VEZ ---
+        # Evita fazer 30 chamadas de rede * número de escalas!
+        ano_atual = data_atual.year
+        try:
+            feriados = await consultar_feriados_nacionais(ano_atual)
+            if data_atual.month == 12:
+                feriados += await consultar_feriados_nacionais(ano_atual + 1)
+            lista_str_feriados = [f["date"] for f in feriados]
+        except Exception as e:
+            logger.warning(f"Aviso: Erro ao baixar feriados da BrasilAPI. Ignorando validação. Erro: {str(e)}")
+            lista_str_feriados = []
+        
         for escala in escalas:
             for i in range(dias_a_gerar):
                 dia_alvo = data_atual + timedelta(days=i)
                 dia_semana_python = dia_alvo.weekday() + 1 
+                
+                # --- PREVENÇÃO DE FERIADOS ---
+                if dia_alvo.isoformat() in lista_str_feriados:
+                    logger.info(f"Ignorando geração de slots na Escala {escala.id_escala} no dia {dia_alvo} - Motivo: Feriado Nacional!")
+                    continue
                 
                 if escala.tp_dia_semana == dia_semana_python:
                     stmt_check = select(models.AgendaCentral).where(

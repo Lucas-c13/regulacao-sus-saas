@@ -6,6 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import JSONB
 from .session import Base
 
+
 # ==========================================
 # 1. CORE MULTI-TENANT E ACESSOS
 # ==========================================
@@ -40,9 +41,10 @@ class Profissional(Base):
     senha_hash: Mapped[str] = mapped_column(String(255))
     sn_ativo: Mapped[bool] = mapped_column(Boolean, default=True)
     dt_cadastro: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    is_senha_provisoria = Column(Boolean, default=False, nullable=False)
+    is_senha_provisoria: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Garante que o CPF é único dentro do mesmo município
     __table_args__ = (UniqueConstraint('id_municipio', 'cpf', name='uix_municipio_cpf'),)
+    
 
 class UbsProfissional(Base):
     """Tabela Auxiliar + ACL (Controle de Permissões Granulares em JSONB)"""
@@ -84,7 +86,7 @@ class Paciente(Base):
     is_validado_sus: Mapped[bool] = mapped_column(Boolean, default=False)
     dt_aceite_lgpd: Mapped[datetime] = mapped_column(DateTime) 
     dt_cadastro: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    is_senha_provisoria = Column(Boolean, default=False, nullable=False)
+    is_senha_provisoria: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 # ==========================================
 # 3. MOTOR DE AGENDAMENTO (CORE)

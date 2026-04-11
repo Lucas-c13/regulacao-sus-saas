@@ -36,11 +36,10 @@ export default function AgendaDia() {
         params: { id_ubs: ubsAtiva }
       });
       
-      const nomes = ["Maria Silva", "João Santos", "Ana Oliveira", "Carlos Souza", "Beatriz Costa"];
       const dados = response.data;
-      dados.pacientes = dados.pacientes.map((p: any, index: number) => ({
+      dados.pacientes = dados.pacientes.map((p: any) => ({
         ...p,
-        nome_ficticio: nomes[index % nomes.length]
+        nome_ficticio: p.nome_paciente || 'Cidadão SUS Validado'
       }));
 
       setAgenda(dados);
@@ -159,7 +158,7 @@ export default function AgendaDia() {
                     {paciente.status === 'M' && (
                     <button 
                         onClick={() => handleCheckIn(paciente.id_item)}
-                        className="bg-primary hover:bg-secondary text-white px-4 py-1.5 rounded-md text-sm font-semibold transition-colors opacity-0 group-hover:opacity-100"
+                        className="bg-primary hover:bg-secondary text-white px-4 py-1.5 rounded-md text-sm font-semibold transition-colors"
                     >
                         Fazer Check-in
                     </button>

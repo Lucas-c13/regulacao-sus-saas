@@ -1,24 +1,34 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, validator
 import uuid
 
 from ..database.session import get_db
 from ..database import models
-# Importe o nome correto da sua função de criar token (ajuste se for criar_token ou criar_token_acesso)
-from ..core.security import verificar_senha, criar_token 
+from ..core.security import verificar_senha, criar_token, gerar_hash, get_usuario_logado
 
 router = APIRouter(prefix="/auth", tags=["Autenticação"])
+
+# --- Esquemas de Validação (Schemas) ---
 
 class VerificaAcessoRequest(BaseModel):
     cpf: str
 
+class RedefinirSenhaRequest(BaseModel):
+    """Esquema para a troca obrigatória de senha no primeiro acesso."""
+    cpf: str
+    senha_atual: str
+    nova_senha: str = Field(..., min_length=8, description="A nova senha deve ter no mínimo 8 caracteres")
+
+# --- Rotas de Autenticação ---
+
 @router.post("/verificar-acessos")
 async def verificar_acessos(dados: VerificaAcessoRequest, db: AsyncSession = Depends(get_db)):
     """
-    Passo 1: Recebe o CPF e devolve todas as prefeituras onde o profissional possui vínculo.
+    Passo 1: Identifica os vínculos do profissional.
+    Retorna a lista de municípios onde o CPF possui cadastro ativo.
     """
     stmt = (
         select(models.Profissional, models.Municipio.nome)
@@ -38,21 +48,18 @@ async def verificar_acessos(dados: VerificaAcessoRequest, db: AsyncSession = Dep
             detail="CPF não encontrado ou profissional inativo."
         )
 
-    vinculos = [
-        {
-            "id_municipio": str(prof.id_municipio),
-            "nome_municipio": nome_municipio
-        }
-        for prof, nome_municipio in resultados
-    ]
-
-    return {"vinculos": vinculos}
+    return {
+        "vinculos": [
+            {"id_municipio": str(p.id_municipio), "nome_municipio": nome}
+            for p, nome in resultados
+        ]
+    }
 
 @router.post("/login")
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
     """
-    Passo 2: Efetua o login num município específico selecionado no app/web.
-    O client_id do formulário é usado para passar o id_municipio.
+    Passo 2: Autenticação em um município específico.
+    Implementa a trava de redefinição obrigatória (HTTP 428).
     """
     id_municipio_req = form_data.client_id
     
@@ -62,7 +69,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
             detail="É obrigatório informar o ID do município (client_id)."
         )
 
-    # 1. Buscar o profissional pelo CPF e Município
+    # 1. Busca profissional com filtro de Tenant (Município)
     stmt_prof = select(models.Profissional).where(
         models.Profissional.cpf == form_data.username,
         models.Profissional.id_municipio == id_municipio_req,
@@ -72,33 +79,30 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
     result_prof = await db.execute(stmt_prof)
     profissional = result_prof.scalars().first()
 
-    # 2. Validar existência e senha
+    # 2. Validação de credenciais
     if not profissional or not verificar_senha(form_data.password, profissional.senha_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, 
-            detail="CPF, senha ou município incorretos."
+            detail="Credenciais inválidas para este município."
         )
 
-    # ------------------------------------------------------------------
-    # NOVO: VALIDAÇÃO FIRST-LOGIN (Trava de Redefinição Zero Trust)
-    # ------------------------------------------------------------------
+    # 3. Trava de Primeiro Acesso (Zero Trust)
+    # Se a senha for provisória, o sistema impede o login total e exige reset.
     if profissional.is_senha_provisoria:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, 
+            status_code=status.HTTP_428_PRECONDITION_REQUIRED, 
             detail="FIRST_LOGIN_RESET_REQUIRED"
         )
 
-    # ------------------------------------------------------------------
-    # NOVO: BUSCAR VÍNCULO UBS E PERMISSÕES (Para injetar no Token)
-    # ------------------------------------------------------------------
+    # 4. Recuperação de contexto operacional (UBS e Permissões)
     stmt_vinculo = select(models.UbsProfissional).where(
         models.UbsProfissional.id_profissional == profissional.id_profissional
-    ).limit(1) # Pega a principal
+    ).limit(1)
+    
     result_vinculo = await db.execute(stmt_vinculo)
     vinculo = result_vinculo.scalars().first()
 
-    # 3. Gerar o Payload do Token (VITAL para o Tenant Enforcement)
-    # Agora o token carrega a UBS e as permissões conforme exigido no PDF
+    # 5. Geração de Payload Multi-tenant
     payload = {
         "sub": profissional.cpf,
         "nome": profissional.nome,
@@ -108,15 +112,15 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
         "permissoes": vinculo.permissoes if vinculo else {}
     }
     
-    token = criar_token(payload)
+    access_token = criar_token(payload)
     
-    # 4. Buscar informações visuais do município para o frontend
+    # 6. Metadados para o Frontend (Identidade Visual)
     stmt_mun = select(models.Municipio).where(models.Municipio.id_municipio == id_municipio_req)
     result_mun = await db.execute(stmt_mun)
     municipio = result_mun.scalars().first()
     
     return {
-        "access_token": token, 
+        "access_token": access_token, 
         "token_type": "bearer",
         "usuario": {
             "nome": profissional.nome,
@@ -126,6 +130,45 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
         },
         "municipio": {
             "nome": municipio.nome if municipio else "Desconhecido",
-            "tema_visual": municipio.tema_visual if municipio else None
+            "tema_visual": municipio.tema_visual if municipio else {}
         }
     }
+
+@router.post("/redefinir-senha")
+async def redefinir_senha(
+    dados: RedefinirSenhaRequest, 
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Endpoint para troca de senha obrigatória ou voluntária.
+    Desativa a flag 'is_senha_provisoria' após o sucesso.
+    """
+    
+    # Busca o Profissional no banco pelo CPF
+    stmt = select(models.Profissional).where(models.Profissional.cpf == dados.cpf)
+    result = await db.execute(stmt)
+    current_user = result.scalars().first()
+    
+    if not current_user:
+        raise HTTPException(status_code=404, detail="Profissional não encontrado.")
+
+    # 1. Valida se a senha atual confere
+    if not verificar_senha(dados.senha_atual, current_user.senha_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="A senha atual informada está incorreta."
+        )
+
+    # 2. Atualiza para o novo hash e libera o acesso
+    novo_hash = gerar_hash(dados.nova_senha)
+    
+    stmt_update = (
+        update(models.Profissional)
+        .where(models.Profissional.id_profissional == current_user.id_profissional)
+        .values(senha_hash=novo_hash, is_senha_provisoria=False)
+    )
+    
+    await db.execute(stmt_update)
+    await db.commit()
+    
+    return {"message": "Senha atualizada com sucesso. O acesso total foi liberado."}

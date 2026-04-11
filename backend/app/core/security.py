@@ -35,14 +35,51 @@ def get_tenant_db(
 ):
     """
     Dependência Sênior: Retorna a sessão do banco e o ID do Tenant de uma só vez.
-    Obriga o desenvolvedor a usar o tenant_id nas consultas.
+    Libera a passagem sem ID para o admin_master.
     """
     tenant_id = usuario.get("id_municipio")
+    role = usuario.get("role")
     
-    if not tenant_id:
+    if role != "admin_master" and not tenant_id:
         raise HTTPException(
             status_code=403, 
             detail="Acesso Negado: Token não possui vínculo com um Município (Tenant)."
         )
         
     return db, tenant_id
+
+# ==========================================
+# DEPENDÊNCIAS DE NÍVEL (RBAC)
+# ==========================================
+
+def require_admin_master(usuario: dict = Depends(get_usuario_logado)):
+    """
+    Nível 1 (Admin Master): Acesso Global.
+    Exige que o JWT possua 'role': 'admin_master'.
+    """
+    if usuario.get("role") != "admin_master":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso Negado (Nível 1): Privilégios de Administrador Master são obrigatórios."
+        )
+    return usuario
+
+def require_gestor_prefeitura(usuario: dict = Depends(get_usuario_logado)):
+    """
+    Nível 2 (Gestor Prefeitura): Restrito ao seu Tenant, mas gere todas as UBSs dele.
+    """
+    role = usuario.get("role")
+    if role not in ["admin_master", "gestor_prefeitura"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso Negado (Nível 2): Apenas o Gestor da Prefeitura pode realizar esta ação."
+        )
+        
+    tenant_id = usuario.get("id_municipio")
+    if not tenant_id and role != "admin_master":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Acesso Negado: A sua conta não possui Tenant vinculado."
+        )
+        
+    return usuario

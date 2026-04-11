@@ -13,20 +13,14 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// 👇 NOVO: Interceptor de RESPOSTA
+// 👇 Interceptor de RESPOSTA Re-arquitetado para Router
 api.interceptors.response.use(
-  (response) => response, // Se der sucesso, apenas repassa a resposta
+  (response) => response, 
   (error) => {
-    // Se o erro for 401 (Não Autorizado), limpamos o cache e mandamos pro Login
+    // Se o erro for 401 (Não Autorizado) -> Dispara o evento global
+    // O InternalAuthObserver no App.tsx agarra nisto e redireciona de forma suave!
     if (error.response && error.response.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('ubsAtiva');
-      localStorage.removeItem('tema');
-      
-      // Só redireciona se não estivermos já na página de login
-      if (window.location.pathname !== '/login' && window.location.pathname !== '/') {
-        window.location.href = '/login'; 
-      }
+      window.dispatchEvent(new Event('auth:unauthorized'));
     }
     return Promise.reject(error);
   }
