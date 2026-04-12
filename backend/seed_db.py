@@ -23,6 +23,10 @@ async def seed():
             db.add(ubs)
             await db.flush()
 
+            especialidade = Especialidade(nome="Clínica Geral", is_livre_demanda=True)
+            db.add(especialidade)
+            await db.flush()
+
             profissional = Profissional(
                 id_municipio=municipio.id_municipio, nome="Lucas Silva (Administrador)",
                 cpf="11122233344", conselho="CRM-MG 12345",
@@ -36,7 +40,7 @@ async def seed():
             vinculo = UbsProfissional(
                 id_profissional=profissional.id_profissional,
                 id_ubs=ubs.id_ubs,
-                permissoes={"is_gestor_local": True}
+                permissoes={"admin_master": True, "is_gestor_prefeitura": True}
             )
             db.add(vinculo)
             await db.flush()

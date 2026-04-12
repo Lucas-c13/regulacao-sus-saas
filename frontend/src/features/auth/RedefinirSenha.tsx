@@ -122,7 +122,7 @@ export default function RedefinirSenha() {
 
               <div className="space-y-2">
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wide block">
-                  Nova Palavra-Passe Definitiva
+                  Nova Senha Definitiva
                 </label>
                 <input
                   type="password"
@@ -156,7 +156,7 @@ export default function RedefinirSenha() {
                 className="w-full mt-4 bg-primary hover:bg-secondary text-white font-bold py-4 rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center space-x-2 disabled:opacity-50"
               >
                 <KeyRound size={20} />
-                <span>{loading ? 'A REGISTAR...' : 'PERMUTAR CHAVES DE ACESSO'}</span>
+                <span>{loading ? 'REGISTRANDO...' : 'TROCAR CHAVES DE ACESSO'}</span>
               </button>
             </form>
           )}

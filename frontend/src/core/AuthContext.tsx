@@ -3,11 +3,14 @@ import { api } from './api';
 import { jwtDecode } from 'jwt-decode';
 
 interface DecodedToken {
-  sub: string;
-  role: string;
-  id_municipio: string | null;
+  sub: string;           // CPF do profissional
+  nome: string;
+  role: string;          // 'admin_master' | 'gestor_prefeitura' | 'gestor_local' | 'profissional'
+  tenant_id: string;     // UUID do município (era id_municipio — corrigido)
+  id_municipio?: string; // alias legado para compatibilidade
   id_ubs: string | null;
-  is_senha_provisoria: boolean;
+  id_profissional: string;
+  permissoes: Record<string, any>;
   exp: number;
 }
 
@@ -35,16 +38,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       userPayload = jwtDecode<DecodedToken>(token);
       
-      // O JWT real injecta as permissoes JSONB, não a string 'role' solta.
-      // Vamos traduzir o JSONB numa role forte para o React Router (RBAC):
-      const perm = (userPayload as any).permissoes || {};
-      
-      if (userPayload.sub === '11122233344' || perm.is_admin_master) {
-         userRole = 'admin_master'; // God Mode (CPF Master do Seed)
-      } else if (perm.is_gestor_local) {
-         userRole = 'gestor_local'; // Diretor da UBS
+      // O JWT já traz 'role' definido pelo backend diretamente
+      // Prioridade: role do JWT > permissões JSONB > fallback
+      if (userPayload.role) {
+        userRole = userPayload.role;
       } else {
-         userRole = 'profissional'; // Médico / Rececionista
+        // Fallback caso seja token antigo sem campo 'role'
+        const perm = userPayload.permissoes || {};
+        if (perm.admin_master) userRole = 'admin_master';
+        else if (perm.is_gestor_prefeitura) userRole = 'gestor_prefeitura';
+        else if (perm.is_gestor_local) userRole = 'gestor_local';
+        else userRole = 'profissional';
       }
       
     } catch {

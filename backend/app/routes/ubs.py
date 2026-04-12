@@ -17,7 +17,7 @@ async def listar_ubs(
     usuario: dict = Depends(get_usuario_logado)
 ):
     """
-    Lista todas as UBSs pertencentes EXCLUSIVAMENTE ao município do utilizador logado.
+    Lista todas as UBSs pertencentes EXCLUSIVAMENTE ao município do usuário logado.
     O cache foi removido desta camada para evitar Data Leak entre Tenants.
     """
     tenant_id = usuario.get("tenant_id")

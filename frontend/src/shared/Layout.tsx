@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../core/AuthContext';
 import { api } from '../core/api';
-import { Calendar, LayoutDashboard, LogOut, Users, MapPin, Building2, UserPlus, HeartPulse, CalendarDays } from 'lucide-react';
+import { Calendar, LayoutDashboard, LogOut, Users, MapPin, Building2, UserPlus, HeartPulse, CalendarDays, Stethoscope } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 
 interface Ubs {
@@ -17,7 +17,9 @@ export default function Layout({ children }: { children: ReactNode }) {
   useEffect(() => {
     const carregarUbs = async () => {
       try {
-        const response = await api.get('/ubs/minhas-ubs');
+        // Se for admin master, busca todas as UBSs do município, se não, busca apenas as vinculadas
+        const endpoint = userRole === 'admin_master' ? '/ubs/' : '/ubs/minhas-ubs';
+        const response = await api.get(endpoint);
         const lista = response.data;
         setMinhasUbs(lista);
         
@@ -28,10 +30,8 @@ export default function Layout({ children }: { children: ReactNode }) {
         console.error("Erro ao carregar UBSs", error);
       }
     };
-    // Admin Master opera ao nível Município, não precisa carregar combo box de UBS Local
-    if (userRole !== 'admin_master') {
-       carregarUbs();
-    }
+    
+    carregarUbs();
   }, [ubsAtiva, setUbsAtiva, userRole]);
 
   return (
@@ -64,6 +64,9 @@ export default function Layout({ children }: { children: ReactNode }) {
               </NavLink>
               <NavLink to="/admin/escalas" className={({isActive}) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
                 <CalendarDays size={20} /><span>Gestão de Escalas</span>
+              </NavLink>
+              <NavLink to="/admin/especialidades" className={({isActive}) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
+                <Stethoscope size={20} /><span>Especialidades</span>
               </NavLink>
             </>
           )}
@@ -99,7 +102,6 @@ export default function Layout({ children }: { children: ReactNode }) {
              userRole === 'gestor_prefeitura' ? 'Painel de Prefeitura' : 'Portal de Saúde' 
           }</h1>
           
-          { userRole !== 'admin_master' && (
             <div className="flex items-center space-x-3 bg-gray-50 px-4 py-2 rounded-lg border border-gray-200">
               <MapPin size={18} className="text-primary" />
               <span className="text-sm font-medium text-gray-500">Unidade:</span>
@@ -108,13 +110,12 @@ export default function Layout({ children }: { children: ReactNode }) {
                 value={ubsAtiva}
                 onChange={(e) => setUbsAtiva(e.target.value)}
               >
-                {minhasUbs.length === 0 && <option value="">A carregar...</option>}
+                {minhasUbs.length === 0 && <option value="">Carregando...</option>}
                 {minhasUbs.map((ubs) => (
                   <option key={ubs.id_ubs} value={ubs.id_ubs}>{ubs.nome_ubs}</option>
                 ))}
               </select>
             </div>
-          )}
         </header>
 
         <div className="flex-1 overflow-auto p-6 md:p-8 bg-slate-50/50">

@@ -112,7 +112,7 @@ export default function Login() {
               Autenticação de Operador
             </h1>
             <p className="text-slate-500 font-medium text-sm">
-              Insira a sua credencial para aceder à Regulação Local
+              Insira a sua credencial para acessar a Regulação Local
             </p>
           </div>
 
@@ -144,7 +144,7 @@ export default function Login() {
 
             <div className="space-y-2">
               <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">
-                Palavra-Passe
+                Senha
               </label>
               <input
                 type="password"

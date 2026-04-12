@@ -38,7 +38,7 @@ class AuditoriaMiddleware(BaseHTTPMiddleware):
             endpoint = str(request.url.path)
             status_code = response.status_code
             
-            # 3. Extrair o Utilizador do JWT
+            # 3. Extrair o Usuário do JWT
             usuario_id = None
             tenant_id = None
             nome_usuario = "Sistema/Desconhecido"
@@ -57,7 +57,7 @@ class AuditoriaMiddleware(BaseHTTPMiddleware):
             # --- PARTE 1: LOG NO TERMINAL ---
             log_message = (
                 f"Ação: {request.method} | Rota: {endpoint} | Status: {status_code} | "
-                f"IP: {cliente_ip} | Utilizador: {nome_usuario} | Tempo: {process_time:.3f}s"
+                f"IP: {cliente_ip} | Usuário: {nome_usuario} | Tempo: {process_time:.3f}s"
             )
             
             if status_code >= 400:

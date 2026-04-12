@@ -1,10 +1,11 @@
 from pydantic import BaseModel, field_validator, Field, model_validator
 from datetime import date, time, datetime 
 from typing import Optional
+import uuid
 
 class CadastroPacienteApp(BaseModel):
-    id_municipio: str
-    id_ubs_referencia: str
+    id_municipio: uuid.UUID
+    id_ubs_referencia: uuid.UUID
     cpf: Optional[str] = Field(None, min_length=11, max_length=11)
     cns: Optional[str] = Field(None, min_length=15, max_length=15)
     celular: str
@@ -33,8 +34,8 @@ class CadastroPacienteApp(BaseModel):
         return v
 
 class NovoAgendamentoApp(BaseModel):
-    id_paciente: str
-    id_escala: str
+    id_paciente: uuid.UUID
+    id_escala: uuid.UUID
     data_agendamento: date
     hora_vaga: time
 
@@ -45,12 +46,14 @@ class NovoProfissionalUBS(BaseModel):
     nome: str
     cpf: str
     senha: str
-    id_ubs: str # A UBS para onde o novo funcionário vai ser designado
+    id_ubs: uuid.UUID # A UBS para onde o novo funcionário vai ser designado
     registro_conselho: Optional[str] = Field(None, description="CRM, COREN ou afins do profissional")
 
 class EscalaCentralBase(BaseModel):
-    id_ubs: str
-    id_profissional: str
+    id_ubs: uuid.UUID
+    id_profissional: uuid.UUID
+    id_especialidade: uuid.UUID
+    tp_dia_semana: int = Field(..., ge=1, le=7, description="1 para Segunda, 7 para Domingo")
     cbo: Optional[str] = Field(None, description="CBO (Classificação Brasileira de Ocupações) da especialidade")
     hr_inicio: time = Field(..., description="Hora de início do turno (ex: 08:00)")
     hr_fim: time = Field(..., description="Hora de fim do turno (ex: 17:00)")
@@ -61,8 +64,8 @@ class EscalaCentralCreate(EscalaCentralBase):
     pass
 
 class EscalaCentralResponse(EscalaCentralBase):
-    id_escala: str
-    id_municipio: str
+    id_escala: uuid.UUID
+    id_municipio: uuid.UUID
     sn_ativo: bool
 
     class Config:
@@ -102,4 +105,4 @@ class GestorLocalCreate(BaseModel):
     nome: str = Field(..., min_length=3, max_length=150)
     cpf: str = Field(..., min_length=11, max_length=11)
     senha: str = Field(..., min_length=8)
-    id_ubs: str = Field(..., description="UUID da UBS que será gerida por este profissional")
+    id_ubs: uuid.UUID = Field(..., description="UUID da UBS que será gerida por este profissional")

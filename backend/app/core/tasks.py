@@ -5,7 +5,7 @@ from sqlalchemy.future import select
 
 # Importamos o Redis e a Sessão do Banco de Dados
 from app.core.middlewares import redis_client 
-from app.database.session import SessionLocal
+from app.database.session import AsyncSessionLocal as SessionLocal
 from app.database import models
 from app.services.feriados_service import consultar_feriados_nacionais
 
@@ -142,14 +142,14 @@ async def disparar_lembretes_sms():
                     models.ItAgendaCentral.tp_situacao.in_(['A', 'M']) 
                 )
             )
-            registos = (await db.execute(stmt)).all()
+            registros = (await db.execute(stmt)).all()
             
-            if not registos:
+            if not registros:
                 logger.info(f"Nenhuma consulta agendada para amanhã.")
                 return
 
             sucessos = 0
-            for item, paciente, agenda in registos:
+            for item, paciente, agenda in registros:
                 celular = paciente.contato.get("celular") if paciente.contato else None
                 hora_formatada = item.hr_agenda.strftime("%H:%M")
                 if celular:

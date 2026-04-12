@@ -19,8 +19,12 @@ class CADSUSService:
         Retorna dados apenas para estes dois CPFs de teste.
         """
         base_teste = {
+            # CPFs de teste padrão
             "12345678901": MockDadosGoverno("MARIA DA SILVA MOCK", "700012345678901", datetime(1985, 10, 15)),
-            "98765432100": MockDadosGoverno("JOSE DOS SANTOS MOCK", "700098765432100", datetime(1970, 3, 12))
+            "98765432100": MockDadosGoverno("JOSE DOS SANTOS MOCK", "700098765432100", datetime(1970, 3, 12)),
+            "99988877766": MockDadosGoverno("JOAO DA SILVA TESTE", "700012345678902", datetime(1980, 5, 20)),
+            # CPF real — ambiente de desenvolvimento
+            "11848129696": MockDadosGoverno("LUCAS DESENVOLVEDOR", "700011848129696", datetime(1998, 1, 1)),
         }
 
         # Simula o tempo de resposta do servidor do governo

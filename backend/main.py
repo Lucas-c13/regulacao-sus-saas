@@ -14,7 +14,7 @@ from redis import asyncio as aioredis
 import os
 
 # Importações das Rotas e Middlewares
-from app.routes import auth, pacientes, agendamentos, profissionais, enderecos, feriados, ubs, escalas, municipios, dashboard
+from app.routes import auth, pacientes, agendamentos, profissionais, enderecos, feriados, ubs, escalas, municipios, dashboard, especialidades
 from app.core.middlewares import AuditoriaMiddleware
 
 # Importações das Tarefas (Workers)
@@ -112,6 +112,7 @@ app.include_router(ubs.router)
 app.include_router(escalas.router)
 app.include_router(municipios.router)
 app.include_router(dashboard.router)
+app.include_router(especialidades.router)
 
 @app.get("/")
 def home():

@@ -37,7 +37,7 @@ def get_tenant_db(
     Dependência Sênior: Retorna a sessão do banco e o ID do Tenant de uma só vez.
     Libera a passagem sem ID para o admin_master.
     """
-    tenant_id = usuario.get("id_municipio")
+    tenant_id = usuario.get("tenant_id")
     role = usuario.get("role")
     
     if role != "admin_master" and not tenant_id:

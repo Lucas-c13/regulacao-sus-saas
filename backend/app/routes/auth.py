@@ -102,14 +102,26 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
     result_vinculo = await db.execute(stmt_vinculo)
     vinculo = result_vinculo.scalars().first()
 
-    # 5. Geração de Payload Multi-tenant
+    # 5. Geração de Payload Multi-tenant com RBAC dinâmico
+    permissoes = vinculo.permissoes if vinculo else {}
+    
+    # Determina a role para facilitar o trabalho dos decorators do security.py
+    role = "profissional" # Default
+    if permissoes.get("admin_master"):
+        role = "admin_master"
+    elif permissoes.get("is_gestor_prefeitura"):
+        role = "gestor_prefeitura"
+    elif permissoes.get("is_gestor_local"):
+        role = "gestor_local"
+
     payload = {
         "sub": profissional.cpf,
         "nome": profissional.nome,
         "id_profissional": str(profissional.id_profissional),
         "tenant_id": str(profissional.id_municipio),
         "id_ubs": str(vinculo.id_ubs) if vinculo else None,
-        "permissoes": vinculo.permissoes if vinculo else {}
+        "role": role,
+        "permissoes": permissoes
     }
     
     access_token = criar_token(payload)

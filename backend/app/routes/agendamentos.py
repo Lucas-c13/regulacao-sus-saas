@@ -48,7 +48,7 @@ def gerar_slots_tempo(hr_inicio: time, hr_fim: time, intervalo_min: int):
 async def realizar_agendamento(
     dados: schemas.NovoAgendamentoApp, 
     db: AsyncSession = Depends(get_db),
-    usuario: dict = Depends(get_usuario_logado) # Injeção do utilizador logado para Tenant Enforcement
+    usuario: dict = Depends(get_usuario_logado) # Injeção do usuário logado para Tenant Enforcement
 ):
     tenant_id = usuario.get("tenant_id")
 
@@ -91,7 +91,7 @@ async def realizar_agendamento(
 
     # 3. Iniciar Transação e Trava de Overbooking (Pessimistic Lock)
     async with db.begin():
-        # Garantir que a escala pertence ao município do utilizador logado
+        # Garantir que a escala pertence ao município do usuário logado
         stmt_escala = select(models.EscalaCentral).filter(
             models.EscalaCentral.id_escala == dados.id_escala,
             models.EscalaCentral.id_municipio == tenant_id
@@ -103,7 +103,7 @@ async def realizar_agendamento(
         stmt_agenda = select(models.AgendaCentral).filter(
             models.AgendaCentral.id_escala == dados.id_escala,
             models.AgendaCentral.dt_agenda == dados.data_agendamento
-        ).with_for_update() # Lock de registo ativo
+        ).with_for_update() # Lock de registro ativo
         
         agenda_dia = (await db.execute(stmt_agenda)).scalar_one_or_none()
 

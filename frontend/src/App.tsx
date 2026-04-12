@@ -13,6 +13,7 @@ import NovoAgendamento from './features/recepcao/NovoAgendamento';
 import CadastroPaciente from './features/recepcao/CadastroPaciente';
 import RedefinirSenha from './features/auth/RedefinirSenha';
 import ListaProfissionais from './features/admin/ListaProfissionais';
+import GestaoEspecialidades from './features/admin/GestaoEspecialidades';
 
 // Proteção Robusta de Componentes via React Router
 function ProtectedRoute({ children, allowedRoles }: { children: ReactNode, allowedRoles?: string[] }) {
@@ -90,8 +91,15 @@ function RoutesMap() {
             </Layout>
           </ProtectedRoute>
         } />
+        <Route path="/admin/especialidades" element={
+          <ProtectedRoute allowedRoles={['admin_master']}>
+            <Layout>
+               <GestaoEspecialidades />
+            </Layout>
+          </ProtectedRoute>
+        } />
 
-        {/* Ecrãs Operacionais (Nível 3) */}
+        {/* Telas Operacionais (Nível 3) */}
         <Route path="/recepcao/agenda" element={
           <ProtectedRoute allowedRoles={['admin_master', 'gestor_local', 'profissional']}>
             <Layout>

@@ -25,7 +25,7 @@ export default function ListaProfissionais() {
         const response = await api.get('/profissionais/municipio');
         setProfissionais(response.data);
       } catch (error) {
-        setErro('Falha ao carregar a Mesa de Controlo dos Profissionais.');
+        setErro('Falha ao carregar a Mesa de Controle dos Profissionais.');
       } finally {
         setLoading(false);
       }
@@ -49,7 +49,7 @@ export default function ListaProfissionais() {
           </div>
           <div>
             <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Meus Profissionais</h2>
-            <p className="text-slate-500 font-medium">Mesa de controlo de acessos e médicos geridos pela Município.</p>
+            <p className="text-slate-500 font-medium">Mesa de controle de acessos e médicos geridos pelo Município.</p>
           </div>
         </div>
         <div>
@@ -96,7 +96,7 @@ export default function ListaProfissionais() {
                 <tr>
                   <td colSpan={4} className="p-8 text-center text-slate-500 font-medium">
                     <Activity className="animate-spin mx-auto mb-2 text-primary" />
-                    A carregar a Matrix do Município...
+                    A carregar a Matriz do Município...
                   </td>
                 </tr>
               ) : profissionaisFiltrados.length === 0 ? (

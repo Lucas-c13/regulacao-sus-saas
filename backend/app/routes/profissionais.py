@@ -19,7 +19,7 @@ async def criar_profissional_ubs(
     tenant_id = usuario.get("tenant_id")
     id_profissional_logado = usuario.get("id_profissional")
 
-    # 1. REGRA CRÍTICA: Verificar se o utilizador logado é Gestor Local DESTA UBS
+    # 1. REGRA CRÍTICA: Verificar se o usuário logado é Gestor Local DESTA UBS
     stmt_gestor = select(models.UbsProfissional).where(
         and_(
             models.UbsProfissional.id_profissional == id_profissional_logado,
@@ -33,7 +33,7 @@ async def criar_profissional_ubs(
     if not vinculo_gestor or not vinculo_gestor.permissoes or not vinculo_gestor.permissoes.get("is_gestor_local"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, 
-            detail="Acesso negado: Apenas um Gestor Local pode criar utilizadores para esta UBS."
+            detail="Acesso negado: Apenas um Gestor Local pode criar usuários para esta UBS."
         )
 
     # 2. Tenant Enforcement: Verificar se o CPF já existe neste Município
@@ -49,7 +49,7 @@ async def criar_profissional_ubs(
     if existente:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="CPF já registrado neste município.")
 
-    # 3. Criar o novo utilizador garantindo o isolamento do Tenant
+    # 3. Criar o novo usuário garantindo o isolamento do Tenant
     novo_prof = models.Profissional(
         id_municipio=tenant_id,
         nome=dados.nome, 
@@ -62,11 +62,11 @@ async def criar_profissional_ubs(
     # O flush envia o comando para o banco (gerando o UUID) sem fazer o commit final
     await db.flush() 
 
-    # 4. Vincular o novo utilizador ESTRITAMENTE à mesma UBS solicitada
+    # 4. Vincular o novo usuário ESTRITAMENTE à mesma UBS solicitada
     novo_vinculo = models.UbsProfissional(
         id_ubs=dados.id_ubs,
         id_profissional=novo_prof.id_profissional,
-        # O novo utilizador nasce com permissões restritas (Nível 3 comum)
+        # O novo usuário nasce com permissões restritas (Nível 3 comum)
         permissoes={"is_gestor_local": False, "can_create_escala": False} 
     )
     db.add(novo_vinculo)
@@ -77,7 +77,7 @@ async def criar_profissional_ubs(
         await db.refresh(novo_prof)
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=500, detail=f"Erro interno ao criar utilizador: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro interno ao criar usuário: {str(e)}")
 
     return {
         "msg": "Profissional criado e vinculado com sucesso!", 
@@ -91,7 +91,7 @@ async def criar_gestor_local(
     db_tenant: tuple = Depends(get_tenant_db)
 ):
     """
-    Cria um utilizador Nível 3 já delegado como Gestor Local de uma determinada UBS.
+    Cria um usuário Nível 3 já delegado como Gestor Local de uma determinada UBS.
     Exclusivo para Nível 2 (Gestor da Prefeitura).
     """
     db, tenant_id = db_tenant
