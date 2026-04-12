@@ -25,6 +25,8 @@ class CADSUSService:
             "99988877766": MockDadosGoverno("JOAO DA SILVA TESTE", "700012345678902", datetime(1980, 5, 20)),
             # CPF real — ambiente de desenvolvimento
             "11848129696": MockDadosGoverno("LUCAS DESENVOLVEDOR", "700011848129696", datetime(1998, 1, 1)),
+            # CPF de QA — ambiente de testes pré Go-Live
+            "13249809667": MockDadosGoverno("PACIENTE TESTE QA", "700013249809667", datetime(1990, 6, 15)),
         }
 
         # Simula o tempo de resposta do servidor do governo
