@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import and_
+from sqlalchemy import and_, update
+from datetime import datetime, timezone
 
 from ..database.session import get_db
 from ..database import models
@@ -174,3 +175,92 @@ async def listar_profissionais_municipio(
         }
         for p in profissionais
     ]
+
+
+# ==========================================
+# RESET DE SENHA (AÇÃO DO GESTOR) — Seção 7.3
+# ==========================================
+
+SENHA_PROVISORIA_PADRAO = "Mudar@123"
+
+@router.post("/reset-senha/{id_profissional}", status_code=status.HTTP_200_OK)
+async def resetar_senha_profissional(
+    id_profissional: str,
+    db: AsyncSession = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado)
+):
+    """
+    Ação exclusiva do Gestor: reseta a senha de um profissional para a senha padrão
+    e ativa a flag is_senha_provisoria=True (Zero Trust First-Login).
+    O profissional será obrigado a trocar a senha no próximo acesso (HTTP 428).
+    Restrito a: Gestor Prefeitura (Nível 2) ou Gestor Local da UBS do alvo (Nível 3 delegado).
+    """
+    role = usuario.get("role")
+    tenant_id = usuario.get("tenant_id")
+    id_profissional_logado = usuario.get("id_profissional")
+
+    # 1. Buscar o profissional alvo garantindo isolamento de tenant
+    stmt = select(models.Profissional).where(
+        and_(
+            models.Profissional.id_profissional == id_profissional,
+            models.Profissional.id_municipio == tenant_id
+        )
+    )
+    result = await db.execute(stmt)
+    alvo = result.scalar_one_or_none()
+
+    if not alvo:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Profissional não encontrado neste município."
+        )
+
+    # 2. Validação de autorização
+    # Gestor Prefeitura (Nível 2) pode resetar qualquer profissional do seu tenant
+    # Gestor Local (Nível 3 delegado) só pode resetar profissionais da sua UBS
+    if role not in ["admin_master", "gestor_prefeitura"]:
+        # Verifica se é Gestor Local e se o alvo pertence à sua UBS
+        stmt_ubs_gestor = select(models.UbsProfissional).where(
+            models.UbsProfissional.id_profissional == id_profissional_logado
+        )
+        result_ubs = await db.execute(stmt_ubs_gestor)
+        vinculo_gestor = result_ubs.scalar_one_or_none()
+
+        if not vinculo_gestor or not vinculo_gestor.permissoes.get("is_gestor_local"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Acesso negado: Apenas Gestores podem resetar senhas de profissionais."
+            )
+
+        # Verifica se o alvo está na mesma UBS do gestor
+        stmt_ubs_alvo = select(models.UbsProfissional).where(
+            and_(
+                models.UbsProfissional.id_profissional == id_profissional,
+                models.UbsProfissional.id_ubs == vinculo_gestor.id_ubs
+            )
+        )
+        if not (await db.execute(stmt_ubs_alvo)).scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Acesso negado: O profissional alvo não pertence à sua UBS."
+            )
+
+    # 3. Aplicar o reset com senha provisória e registrar auditoria
+    novo_hash = gerar_hash(SENHA_PROVISORIA_PADRAO)
+    stmt_update = (
+        update(models.Profissional)
+        .where(models.Profissional.id_profissional == id_profissional)
+        .values(
+            senha_hash=novo_hash,
+            is_senha_provisoria=True,
+            dt_ultimo_reset=datetime.now(timezone.utc)
+        )
+    )
+    await db.execute(stmt_update)
+    await db.commit()
+
+    return {
+        "msg": f"Senha do profissional '{alvo.nome}' foi resetada com sucesso.",
+        "instrucao": f"A senha provisória é '{SENHA_PROVISORIA_PADRAO}'. O profissional deverá trocá-la no próximo acesso.",
+        "dt_reset": datetime.now(timezone.utc).isoformat()
+    }

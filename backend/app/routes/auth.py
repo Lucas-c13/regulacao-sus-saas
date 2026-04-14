@@ -3,6 +3,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field, validator
+from datetime import datetime, timezone
 import uuid
 
 from ..database.session import get_db
@@ -177,7 +178,11 @@ async def redefinir_senha(
     stmt_update = (
         update(models.Profissional)
         .where(models.Profissional.id_profissional == current_user.id_profissional)
-        .values(senha_hash=novo_hash, is_senha_provisoria=False)
+        .values(
+            senha_hash=novo_hash,
+            is_senha_provisoria=False,
+            dt_ultimo_reset=datetime.now(timezone.utc)  # Auditoria de resets (Seção 7.5)
+        )
     )
     
     await db.execute(stmt_update)

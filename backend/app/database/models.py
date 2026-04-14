@@ -42,6 +42,7 @@ class Profissional(Base):
     sn_ativo: Mapped[bool] = mapped_column(Boolean, default=True)
     dt_cadastro: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     is_senha_provisoria: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    dt_ultimo_reset: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # Auditoria de resets (Seção 7.5)
     # Garante que o CPF é único dentro do mesmo município
     __table_args__ = (UniqueConstraint('id_municipio', 'cpf', name='uix_municipio_cpf'),)
     
@@ -87,6 +88,7 @@ class Paciente(Base):
     dt_aceite_lgpd: Mapped[datetime] = mapped_column(DateTime) 
     dt_cadastro: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     is_senha_provisoria: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    dt_ultimo_reset: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # Auditoria de resets (Seção 7.5)
 
 # ==========================================
 # 3. MOTOR DE AGENDAMENTO (CORE)
