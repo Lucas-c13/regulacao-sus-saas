@@ -18,7 +18,7 @@ export default function Login() {
   const [erro, setErro] = useState('');
   const [loading, setLoading] = useState(false);
   const [buscandoMunicipios, setBuscandoMunicipios] = useState(false);
-  
+
   const { login, isAuthenticated, userRole } = useAuth();
   const navigate = useNavigate();
 
@@ -68,12 +68,12 @@ export default function Login() {
 
     try {
       await login(cpfLimpo, senha, idMunicipioSelecionado);
-      
+
       const savedToken = localStorage.getItem('token');
       if (savedToken) {
         const decoded: any = jwtDecode(savedToken);
         const perm = decoded.permissoes || {};
-        
+
         if (decoded.sub === '11122233344' || perm.is_admin_master || perm.is_gestor_prefeitura) {
           navigate('/dashboard', { replace: true });
         } else {
@@ -83,8 +83,8 @@ export default function Login() {
 
     } catch (error: any) {
       if (error.response?.status === 428) {
-         navigate('/redefinir-senha', { state: { cpf: cpfLimpo } });
-         return;
+        navigate('/redefinir-senha', { state: { cpf: cpfLimpo } });
+        return;
       }
       setErro('Chave de Acesso bloqueada ou incorreta.');
       setLoading(false);
@@ -93,26 +93,26 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4 font-sans">
-      
+
       <div className="w-full max-w-md">
-        
+
         {/* LOGO SIMPLIFICADA */}
         <div className="flex justify-center mb-8">
-           <div className="flex items-center gap-2 text-3xl font-black text-primary tracking-tighter">
-             <Activity className="text-secondary" size={32} />
-             SaaS <span className="text-secondary font-medium">Regulação</span>
-           </div>
+          <div className="flex items-center gap-2 text-3xl font-black text-primary tracking-tighter">
+            <Activity className="text-secondary" size={32} />
+            SaaS <span className="text-secondary font-medium"></span>
+          </div>
         </div>
 
         {/* CONTAINER PREMIUML B2B */}
         <div className="bg-white p-8 md:p-10 rounded-3xl shadow-sm border border-gray-100">
-          
+
           <div className="text-center mb-8">
             <h1 className="text-2xl font-bold text-slate-800 tracking-tight mb-2">
               Autenticação de Operador
             </h1>
             <p className="text-slate-500 font-medium text-sm">
-              Insira a sua credencial para acessar a Regulação Local
+              Insira a sua credencial para acessar o Local
             </p>
           </div>
 
@@ -124,7 +124,7 @@ export default function Login() {
           )}
 
           <form onSubmit={handleLoginFinal} className="space-y-6">
-            
+
             <div className="space-y-2">
               <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">
                 Credencial (CPF)
@@ -190,15 +190,15 @@ export default function Login() {
               <span>{loading ? 'A CARREGAR DADOS...' : 'ENTRAR NO SISTEMA'}</span>
               {!loading && <ChevronRight size={20} />}
             </button>
-            
+
           </form>
-          
+
         </div>
-        
+
         <div className="mt-8 text-center">
-            <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest">
-              Acesso Seguro · Arquitetura Multi-Tenant
-            </p>
+          <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest">
+            Acesso Seguro · Arquitetura Multi-Tenant
+          </p>
         </div>
 
       </div>

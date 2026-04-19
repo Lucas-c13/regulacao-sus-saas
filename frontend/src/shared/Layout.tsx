@@ -22,7 +22,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         const response = await api.get(endpoint);
         const lista = response.data;
         setMinhasUbs(lista);
-        
+
         if (!ubsAtiva && lista.length > 0) {
           setUbsAtiva(lista[0].id_ubs);
         }
@@ -30,7 +30,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         console.error("Erro ao carregar UBSs", error);
       }
     };
-    
+
     carregarUbs();
   }, [ubsAtiva, setUbsAtiva, userRole]);
 
@@ -40,47 +40,47 @@ export default function Layout({ children }: { children: ReactNode }) {
       <aside className="w-64 bg-surface border-r border-gray-200 flex flex-col shadow-sm z-10">
         <div className="h-16 flex items-center justify-center border-b border-gray-200">
           <h2 className="text-xl font-black text-primary tracking-tight">
-            SaaS <span className="font-medium text-textMain">Regulação</span>
+            SaaS <span className="font-medium text-textMain"></span>
           </h2>
         </div>
 
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-          
+
           {/* Nível 1 e 2: Painel Gestor */}
-          { (userRole === 'admin_master' || userRole === 'gestor_prefeitura') && (
-            <NavLink to="/dashboard" className={({isActive}) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
+          {(userRole === 'admin_master' || userRole === 'gestor_prefeitura') && (
+            <NavLink to="/dashboard" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
               <LayoutDashboard size={20} /><span>Painel Gestor</span>
             </NavLink>
           )}
 
           {/* Nível 1: Setup Master */}
-          { userRole === 'admin_master' && (
+          {userRole === 'admin_master' && (
             <>
-              <NavLink to="/admin/ubs/nova" className={({isActive}) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
+              <NavLink to="/admin/ubs/nova" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
                 <Building2 size={20} /><span>Cadastro de UBS</span>
               </NavLink>
-              <NavLink to="/admin/profissionais" className={({isActive}) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
+              <NavLink to="/admin/profissionais" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
                 <UserPlus size={20} /><span>Gestão de Profissionais</span>
               </NavLink>
-              <NavLink to="/admin/escalas" className={({isActive}) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
+              <NavLink to="/admin/escalas" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
                 <CalendarDays size={20} /><span>Gestão de Escalas</span>
               </NavLink>
-              <NavLink to="/admin/especialidades" className={({isActive}) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
+              <NavLink to="/admin/especialidades" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
                 <Stethoscope size={20} /><span>Especialidades</span>
               </NavLink>
             </>
           )}
 
           {/* Nível 3: Operação de Ponta */}
-          { (userRole === 'gestor_local' || userRole === 'admin_master' || userRole === 'profissional') && (
+          {(userRole === 'gestor_local' || userRole === 'admin_master' || userRole === 'profissional') && (
             <>
-              <NavLink to="/recepcao/agenda" className={({isActive}) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
+              <NavLink to="/recepcao/agenda" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
                 <Calendar size={20} /><span>Agenda Operacional</span>
               </NavLink>
-              <NavLink to="/recepcao/novo-agendamento" className={({isActive}) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
+              <NavLink to="/recepcao/novo-agendamento" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
                 <Users size={20} /><span>Novo Agendamento</span>
               </NavLink>
-              <NavLink to="/recepcao/pacientes/novo" className={({isActive}) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
+              <NavLink to="/recepcao/pacientes/novo" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
                 <HeartPulse size={20} /><span>Novo Paciente</span>
               </NavLink>
             </>
@@ -97,25 +97,25 @@ export default function Layout({ children }: { children: ReactNode }) {
 
       <main className="flex-1 flex flex-col overflow-hidden relative">
         <header className="h-16 bg-surface border-b border-gray-200 flex items-center justify-between px-8 shadow-sm z-0">
-          <h1 className="text-lg font-semibold text-textMain capitalize">{ 
-             userRole === 'admin_master' ? 'Visão Administrativa Mestre' : 
-             userRole === 'gestor_prefeitura' ? 'Painel de Prefeitura' : 'Portal de Saúde' 
+          <h1 className="text-lg font-semibold text-textMain capitalize">{
+            userRole === 'admin_master' ? 'Visão Administrativa Mestre' :
+              userRole === 'gestor_prefeitura' ? 'Painel de Prefeitura' : 'Portal de Saúde'
           }</h1>
-          
-            <div className="flex items-center space-x-3 bg-gray-50 px-4 py-2 rounded-lg border border-gray-200">
-              <MapPin size={18} className="text-primary" />
-              <span className="text-sm font-medium text-gray-500">Unidade:</span>
-              <select 
-                className="bg-transparent text-sm font-bold text-textMain outline-none cursor-pointer w-48"
-                value={ubsAtiva}
-                onChange={(e) => setUbsAtiva(e.target.value)}
-              >
-                {minhasUbs.length === 0 && <option value="">Carregando...</option>}
-                {minhasUbs.map((ubs) => (
-                  <option key={ubs.id_ubs} value={ubs.id_ubs}>{ubs.nome_ubs}</option>
-                ))}
-              </select>
-            </div>
+
+          <div className="flex items-center space-x-3 bg-gray-50 px-4 py-2 rounded-lg border border-gray-200">
+            <MapPin size={18} className="text-primary" />
+            <span className="text-sm font-medium text-gray-500">Unidade:</span>
+            <select
+              className="bg-transparent text-sm font-bold text-textMain outline-none cursor-pointer w-48"
+              value={ubsAtiva}
+              onChange={(e) => setUbsAtiva(e.target.value)}
+            >
+              {minhasUbs.length === 0 && <option value="">Carregando...</option>}
+              {minhasUbs.map((ubs) => (
+                <option key={ubs.id_ubs} value={ubs.id_ubs}>{ubs.nome_ubs}</option>
+              ))}
+            </select>
+          </div>
         </header>
 
         <div className="flex-1 overflow-auto p-6 md:p-8 bg-slate-50/50">

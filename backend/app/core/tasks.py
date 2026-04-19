@@ -2,12 +2,14 @@ import json
 import logging
 from datetime import datetime, timedelta
 from sqlalchemy.future import select
-
-# Importamos o Redis e a Sessão do Banco de Dados
+from sqlalchemy import update, and_
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.core.middlewares import redis_client 
 from app.database.session import AsyncSessionLocal as SessionLocal
 from app.database import models
 from app.services.feriados_service import consultar_feriados_nacionais
+
+scheduler = AsyncIOScheduler()
 
 logger = logging.getLogger("Workers")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -159,3 +161,82 @@ async def disparar_lembretes_sms():
             logger.info(f"Rotina concluída! {sucessos} lembretes enviados com sucesso.")
         except Exception as e:
             logger.error(f"Erro fatal no Worker de Lembretes: {str(e)}")
+
+# ---------------------------------------------------------
+# WORKER 4: PROCESSAMENTO DE NO-SHOW (O combustível da trava)
+# ---------------------------------------------------------
+async def processar_no_show_noturno():
+    """
+    Busca agendamentos de 'ontem' que permaneceram como 'M' (Marcado)
+    e altera para 'F' (Faltou), alimentando a trava de absenteísmo.
+    """
+    logger.info("Iniciando limpeza de agenda (No-Show)...")
+    ontem = datetime.now().date() - timedelta(days=1)
+    
+    async with SessionLocal() as db:
+        try:
+            # Query de Update em massa cruzando com a data da AgendaCentral
+            # Filtramos agendamentos de ONTEM que ainda estão como 'M'
+            stmt = (
+                update(models.ItAgendaCentral)
+                .where(
+                    and_(
+                        models.ItAgendaCentral.tp_situacao == 'M',
+                        models.ItAgendaCentral.id_agenda.in_(
+                            select(models.AgendaCentral.id_agenda).where(
+                                models.AgendaCentral.dt_agenda == ontem
+                            )
+                        )
+                    )
+                )
+                .values(tp_situacao='F')
+            )
+            
+            resultado = await db.execute(stmt)
+            await db.commit()
+            logger.info(f"🤖 [TASK] No-Show: {resultado.rowcount} faltas registradas para o dia {ontem}.")
+            
+        except Exception as e:
+            logger.error(f"Erro no processamento de No-Show: {e}")
+            await db.rollback()
+
+def configurar_agendamentos():
+    # Tarefa A: Auditoria (A cada 15 segundos)
+    scheduler.add_job(
+        processar_fila_auditoria, 
+        'interval', 
+        seconds=15, 
+        id="auditoria_worker", 
+        replace_existing=True
+    )
+    
+    # Tarefa B: No-Show (02:00)
+    scheduler.add_job(
+        processar_no_show_noturno, 
+        'cron', 
+        hour=2, 
+        minute=0, 
+        id="job_no_show", 
+        replace_existing=True
+    )
+    
+    # Tarefa C: Gerador de Agendas (03:00)
+    scheduler.add_job(
+        gerar_agendas_futuras, 
+        'cron', 
+        hour=3, 
+        minute=0, 
+        id="job_gerador_agendas", 
+        replace_existing=True
+    )
+    
+    # Tarefa D: SMS (18:00)
+    scheduler.add_job(
+        disparar_lembretes_sms, 
+        'cron', 
+        hour=18, 
+        minute=0, 
+        timezone='America/Sao_Paulo', 
+        id='lembretes_diarios', 
+        replace_existing=True
+    )

@@ -67,27 +67,34 @@ async def realizar_agendamento(
     stmt_municipio = select(models.Municipio).filter_by(id_municipio=tenant_id)
     municipio = (await db.execute(stmt_municipio)).scalar_one_or_none()
     
-    # 2. Trava de Absenteísmo com Janela de Tempo
-    if municipio and municipio.config_absenteismo:
-        limite_faltas = municipio.config_absenteismo.get("faltas_limite", 3)
-        dias_janela = municipio.config_absenteismo.get("dias_janela", 30)
-        data_corte = datetime.now(fuso_br).date() - timedelta(days=dias_janela)
-        
-        # Contagem de faltas estritamente dentro da janela de tempo definida (ex: últimos 30 dias)
-        stmt_faltas = select(func.count(models.ItAgendaCentral.id_item)).join(
-            models.AgendaCentral, models.ItAgendaCentral.id_agenda == models.AgendaCentral.id_agenda
-        ).filter(
-            models.ItAgendaCentral.id_paciente == dados.id_paciente,
-            models.ItAgendaCentral.tp_situacao == 'F',
-            models.AgendaCentral.dt_agenda >= data_corte
+    # 2. Trava de Absenteísmo (Usando as colunas oficiais)
+    # Buscamos o limite do município. Se estiver nulo, o padrão é 3.
+    limite = municipio.faltas_limite if municipio.faltas_limite is not None else 3
+    
+    # Janela de tempo configurada no JSON ou padrão de 90 dias
+    dias_janela = (municipio.config_absenteismo or {}).get("dias_janela", 90)
+    data_corte = datetime.now(fuso_br).date() - timedelta(days=dias_janela)
+    
+    # Contagem de faltas 'F' (Ignora 'FJ' que são as justificadas)
+    stmt_faltas = select(func.count(models.ItAgendaCentral.id_item)).join(
+        models.AgendaCentral, models.ItAgendaCentral.id_agenda == models.AgendaCentral.id_agenda
+    ).filter(
+        models.ItAgendaCentral.id_paciente == dados.id_paciente,
+        models.ItAgendaCentral.tp_situacao == 'F',
+        models.AgendaCentral.dt_agenda >= data_corte
+    )
+    total_faltas = (await db.execute(stmt_faltas)).scalar() or 0
+    
+    if total_faltas >= limite:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "ABSENTEISMO_BLOQUEIO",
+                "msg": f"Cidadão bloqueado por excesso de faltas ({total_faltas}/{limite}).",
+                "total_faltas": total_faltas,
+                "limite": limite
+            }
         )
-        faltas_cometidas = (await db.execute(stmt_faltas)).scalar()
-        
-        if faltas_cometidas >= limite_faltas:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, 
-                detail=f"Bloqueio por absenteísmo: O utente excedeu o limite de {limite_faltas} faltas nos últimos {dias_janela} dias."
-            )
 
     # 3. Iniciar Transação e Trava de Overbooking (Pessimistic Lock)
     async with db.begin():

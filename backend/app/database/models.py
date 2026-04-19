@@ -16,7 +16,11 @@ class Municipio(Base):
     id_municipio: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     ibge: Mapped[str] = mapped_column(String(7), unique=True)
     nome: Mapped[str] = mapped_column(String(150))
-    # Configurações JSONB (ex: {"faltas_limite": 3, "dias_janela": 30})
+    nome_exibicao: Mapped[str] = mapped_column(String(150))
+    slug: Mapped[str] = mapped_column(String(100), unique=True)
+    cor_primaria: Mapped[str] = mapped_column(String(7))  # cor em hex
+    logo_url: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    faltas_limite: Mapped[int] = mapped_column(Integer, default=3)
     config_absenteismo: Mapped[Optional[dict]] = mapped_column(JSONB)
     tema_visual: Mapped[Optional[dict]] = mapped_column(JSONB)
     dt_cadastro: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -88,6 +92,7 @@ class Paciente(Base):
     dt_aceite_lgpd: Mapped[datetime] = mapped_column(DateTime) 
     dt_cadastro: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     is_senha_provisoria: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    senha_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     dt_ultimo_reset: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # Auditoria de resets (Seção 7.5)
 
 # ==========================================

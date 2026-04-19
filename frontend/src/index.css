@@ -3,11 +3,10 @@
 @tailwind utilities;
 
 :root {
-  /* Cores padrão (Exemplo: Azul SUS). 
-     O nosso ThemeProvider vai alterar isto via JavaScript quando a UBS fizer login! */
-  --color-primary: #0284c7;   
-  --color-secondary: #0369a1; 
-  --color-accent: #f59e0b;    
+  /* Azul padrão SUS caso a prefeitura não tenha cor configurada */
+  --color-primary: #0284c7;
+  --color-secondary: #0369a1;
+  --color-accent: #f59e0b;
 }
 
 body {

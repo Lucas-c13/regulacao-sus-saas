@@ -3,19 +3,109 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import update, and_
 from datetime import datetime, date
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel, Field
+import uuid
 
 from ..database.session import get_db
 from ..database import models
 from ..schemas import schemas
 from ..services.cadsus_service import CADSUSService
-from ..core.security import get_usuario_logado
+from ..core.security import get_usuario_logado, gerar_hash # Adicionado gerar_hash
 import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/pacientes", tags=["Pacientes"])
 cadsus = CADSUSService()
+
+# ==========================================
+# SCHEMAS ADICIONAIS
+# ==========================================
+class CadastroManualPaciente(BaseModel):
+    id_municipio: str
+    id_ubs_referencia: Optional[str] = None
+    nr_cpf: Optional[str] = Field(None, min_length=11, max_length=11)
+    nr_cns: Optional[str] = None
+    nm_paciente: str = Field(..., min_length=3)
+    nm_mae: Optional[str] = None
+    dt_nascimento: date
+    tp_sexo: str = Field(..., pattern="^[MFI]$")
+    celular: Optional[str] = None
+    aceitou_lgpd: bool
+
+class PacienteUpdate(BaseModel):
+    """Schema para edição e reset de senha"""
+    nm_paciente: Optional[str] = None
+    celular: Optional[str] = None
+    id_ubs_referencia: Optional[uuid.UUID] = None
+    sn_ativo: Optional[bool] = None
+    nova_senha: Optional[str] = None # Se enviado, gera o hash e marca provisória
+
+# ==========================================
+# ROTA: LISTAR PACIENTES (Gestão Multi-tenant)
+# ==========================================
+@router.get("/", response_model=List[schemas.PacienteResponse])
+async def listar_pacientes(
+    db: AsyncSession = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado)
+):
+    """
+    Lista cidadãos da prefeitura do usuário logado.
+    """
+    tenant_id = usuario.get("tenant_id")
+    
+    stmt = select(models.Paciente).where(models.Paciente.id_municipio == tenant_id)
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+# ==========================================
+# ROTA: EDITAR / RESET DE SENHA (Gestão)
+# ==========================================
+@router.put("/{id_paciente}")
+async def editar_paciente(
+    id_paciente: uuid.UUID,
+    payload: PacienteUpdate,
+    db: AsyncSession = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado)
+):
+    """
+    Edita dados e permite reset de senha (gera hash e seta flag provisória).
+    """
+    tenant_id = usuario.get("tenant_id")
+
+    stmt = select(models.Paciente).where(
+        and_(
+            models.Paciente.id_paciente == id_paciente,
+            models.Paciente.id_municipio == tenant_id
+        )
+    )
+    paciente = (await db.execute(stmt)).scalar_one_or_none()
+
+    if not paciente:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado nesta prefeitura.")
+
+    update_data = payload.dict(exclude_unset=True)
+
+    # Lógica de Reset de Senha
+    if "nova_senha" in update_data:
+        senha_limpa = update_data.pop("nova_senha")
+        paciente.senha_hash = gerar_hash(senha_limpa)
+        paciente.is_senha_provisoria = True
+        paciente.dt_ultimo_reset = datetime.now()
+
+    # Atualiza demais campos (nm_paciente, celular, etc)
+    for key, value in update_data.items():
+        if key == "celular":
+            paciente.contato = {"celular": value}
+        else:
+            setattr(paciente, key, value)
+
+    try:
+        await db.commit()
+        return {"msg": "Cidadão atualizado!", "id": id_paciente}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ==========================================

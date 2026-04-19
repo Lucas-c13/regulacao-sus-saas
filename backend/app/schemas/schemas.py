@@ -106,3 +106,35 @@ class GestorLocalCreate(BaseModel):
     cpf: str = Field(..., min_length=11, max_length=11)
     senha: str = Field(..., min_length=8)
     id_ubs: uuid.UUID = Field(..., description="UUID da UBS que será gerida por este profissional")
+
+class PacienteResponse(BaseModel):
+    """Retorno padrão para listagem e detalhes de pacientes"""
+    id_paciente: uuid.UUID
+    nome: str
+    cpf: Optional[str] = None
+    cns: Optional[str] = None
+    data_nascimento: Optional[date] = None
+    celular: Optional[str] = None
+    id_municipio: uuid.UUID
+    id_ubs_referencia: Optional[uuid.UUID] = None
+
+    model_config = {"from_attributes": True}
+
+class PacienteUpdate(BaseModel):
+    """Para a rota de edição ou reset de senha pelo admin"""
+    nome: Optional[str] = None
+    celular: Optional[str] = None
+    senha_hash: Optional[str] = None # Caso queira forçar uma senha nova
+
+class MunicipioResponse(BaseModel):
+    """Retorno com as novas colunas que adicionamos ao models.py"""
+    id_municipio: uuid.UUID
+    nome: str
+    nome_exibicao: Optional[str] = None
+    slug: Optional[str] = None
+    cor_primaria: str = "#0056b3"
+    logo_url: Optional[str] = None
+    faltas_limite: int = 3
+    ibge: str
+
+    model_config = {"from_attributes": True}
