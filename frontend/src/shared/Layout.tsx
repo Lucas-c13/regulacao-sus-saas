@@ -2,7 +2,20 @@ import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../core/AuthContext';
 import { api } from '../core/api';
-import { Calendar, LayoutDashboard, LogOut, Users, MapPin, Building2, UserPlus, HeartPulse, CalendarDays, Stethoscope } from 'lucide-react';
+import {
+  Calendar,
+  LayoutDashboard,
+  LogOut,
+  Users,
+  MapPin,
+  Building2,
+  UserPlus,
+  HeartPulse,
+  CalendarDays,
+  Stethoscope,
+  CalendarX,
+  Settings // <-- Ícone adicionado aqui
+} from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 
 interface Ubs {
@@ -48,25 +61,43 @@ export default function Layout({ children }: { children: ReactNode }) {
 
           {/* Nível 1 e 2: Painel Gestor */}
           {(userRole === 'admin_master' || userRole === 'gestor_prefeitura') && (
-            <NavLink to="/dashboard" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
-              <LayoutDashboard size={20} /><span>Painel Gestor</span>
-            </NavLink>
+            <>
+              <NavLink to="/dashboard" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
+                <LayoutDashboard size={20} /><span>Painel Gestor</span>
+              </NavLink>
+
+              {/* --- NOVO MENU AQUI --- */}
+              <NavLink to="/admin/configuracoes" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
+                <Settings size={20} /><span>Configurações</span>
+              </NavLink>
+            </>
           )}
 
           {/* Nível 1: Setup Master */}
           {userRole === 'admin_master' && (
             <>
-              <NavLink to="/admin/ubs/nova" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
-                <Building2 size={20} /><span>Cadastro de UBS</span>
+              <NavLink end to="/admin/ubs" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
+                <Building2 size={20} /><span>Unidades de Saúde</span>
               </NavLink>
+
+              <NavLink to="/admin/ubs/nova" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
+                <Building2 size={20} /><span>Nova UBS</span>
+              </NavLink>
+
               <NavLink to="/admin/profissionais" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
                 <UserPlus size={20} /><span>Gestão de Profissionais</span>
               </NavLink>
+
               <NavLink to="/admin/escalas" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
                 <CalendarDays size={20} /><span>Gestão de Escalas</span>
               </NavLink>
+
               <NavLink to="/admin/especialidades" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
                 <Stethoscope size={20} /><span>Especialidades</span>
+              </NavLink>
+
+              <NavLink to="/admin/feriados" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
+                <CalendarX size={20} /><span>Gestão de Feriados</span>
               </NavLink>
             </>
           )}
@@ -77,9 +108,11 @@ export default function Layout({ children }: { children: ReactNode }) {
               <NavLink to="/recepcao/agenda" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
                 <Calendar size={20} /><span>Agenda Operacional</span>
               </NavLink>
+
               <NavLink to="/recepcao/novo-agendamento" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
                 <Users size={20} /><span>Novo Agendamento</span>
               </NavLink>
+
               <NavLink to="/recepcao/pacientes/novo" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
                 <HeartPulse size={20} /><span>Novo Paciente</span>
               </NavLink>

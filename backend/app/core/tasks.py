@@ -64,9 +64,10 @@ def _gerar_slots_de_tempo(hora_inicio, hora_fim, duracao_minutos):
     return slots
 
 async def gerar_agendas_futuras():
-    """Gera vagas automáticas para escalas ativas."""
+    """Gera vagas automáticas para escalas ativas, respeitando Feriados Nacionais e Municipais/Locais."""
     logger.info("Iniciando rotina de geração de agendas...")
     async with SessionLocal() as db:
+        # Busca todas as escalas ativas
         stmt = select(models.EscalaCentral).where(models.EscalaCentral.sn_ativo == True)
         result = await db.execute(stmt)
         escalas = result.scalars().all()
@@ -75,26 +76,59 @@ async def gerar_agendas_futuras():
         dias_a_gerar = 30
         
         # --- CARREGA FERIADOS EM MEMÓRIA UMA ÚNICA VEZ ---
-        # Evita fazer 30 chamadas de rede * número de escalas!
         ano_atual = data_atual.year
+        lista_str_feriados_nacionais = []
         try:
-            feriados = await consultar_feriados_nacionais(ano_atual)
+            # 1. Busca Feriados Nacionais (BrasilAPI)
+            feriados_api = await consultar_feriados_nacionais(ano_atual)
             if data_atual.month == 12:
-                feriados += await consultar_feriados_nacionais(ano_atual + 1)
-            lista_str_feriados = [f["date"] for f in feriados]
+                feriados_api += await consultar_feriados_nacionais(ano_atual + 1)
+            lista_str_feriados_nacionais = [f["date"] for f in feriados_api]
         except Exception as e:
-            logger.warning(f"Aviso: Erro ao baixar feriados da BrasilAPI. Ignorando validação. Erro: {str(e)}")
-            lista_str_feriados = []
+            logger.warning(f"Aviso: Erro ao baixar feriados da BrasilAPI. Ignorando validação nacional. Erro: {str(e)}")
         
+        # 2. Busca Feriados Cadastrados no Banco (Municipais, Estaduais, etc)
+        # O gestor cadastra esses feriados pelo painel
+        stmt_feriados_locais = select(models.Feriado).where(
+            models.Feriado.data >= data_atual,
+            models.Feriado.data <= data_atual + timedelta(days=dias_a_gerar)
+        )
+        result_locais = await db.execute(stmt_feriados_locais)
+        feriados_locais_db = result_locais.scalars().all()
+        
+        # Mapeamento para acesso rápido: { "id_municipio": ["YYYY-MM-DD", "YYYY-MM-DD"] }
+        feriados_locais_map = {}
+        for f in feriados_locais_db:
+            # Assumindo que a model Feriado tem o id_municipio. 
+            # Se o feriado for global para o sistema inteiro, ajuste a lógica de mapeamento.
+            mun_id = str(f.id_municipio) if hasattr(f, 'id_municipio') and f.id_municipio else 'GLOBAL'
+            dt_str = f.data.isoformat() if hasattr(f.data, 'isoformat') else str(f.data)
+            
+            if mun_id not in feriados_locais_map:
+                feriados_locais_map[mun_id] = []
+            feriados_locais_map[mun_id].append(dt_str)
+
+
         for escala in escalas:
+            id_mun_escala = str(escala.id_municipio)
+            feriados_deste_municipio = feriados_locais_map.get(id_mun_escala, [])
+            feriados_globais = feriados_locais_map.get('GLOBAL', [])
+            
             for i in range(dias_a_gerar):
                 dia_alvo = data_atual + timedelta(days=i)
                 dia_semana_python = dia_alvo.weekday() + 1 
+                dia_alvo_str = dia_alvo.isoformat()
                 
                 # --- PREVENÇÃO DE FERIADOS ---
-                if dia_alvo.isoformat() in lista_str_feriados:
-                    logger.info(f"Ignorando geração de slots na Escala {escala.id_escala} no dia {dia_alvo} - Motivo: Feriado Nacional!")
-                    continue
+                is_feriado = (
+                    dia_alvo_str in lista_str_feriados_nacionais or 
+                    dia_alvo_str in feriados_deste_municipio or
+                    dia_alvo_str in feriados_globais
+                )
+                
+                if is_feriado:
+                    logger.info(f"Ignorando geração de slots na Escala {escala.id_escala} no dia {dia_alvo_str} - Motivo: Feriado (Nacional ou Local)!")
+                    continue # Pula o feriado, não gera vagas neste dia!
                 
                 if escala.tp_dia_semana == dia_semana_python:
                     stmt_check = select(models.AgendaCentral).where(

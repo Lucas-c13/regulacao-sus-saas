@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { api } from '../../core/api';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid } from 'recharts';
-import { Calendar, Users, TrendingUp, AlertTriangle, CalendarDays, Building2, RefreshCw } from 'lucide-react';
+import { Calendar, Users, TrendingUp, AlertTriangle, CalendarDays, Building2, RefreshCw, Download } from 'lucide-react';
 import { useAuth } from '../../core/AuthContext';
+import * as XLSX from 'xlsx';
 
 interface KpiResponse {
   filtro_temporal: { inicio: string; fim: string };
@@ -20,10 +21,6 @@ interface KpiResponse {
   }>;
 }
 
-interface EscalasRes {
-  total: number;
-}
-
 export default function DashboardGerencial() {
   const { ubsAtiva } = useAuth();
 
@@ -33,7 +30,7 @@ export default function DashboardGerencial() {
 
   const [dataInicio, setDataInicio] = useState(primeiroDia);
   const [dataFim, setDataFim] = useState(ultimoDia);
-  
+
   const [kpis, setKpis] = useState<KpiResponse | null>(null);
   const [totalEscalas, setTotalEscalas] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -67,6 +64,29 @@ export default function DashboardGerencial() {
     fetchDashboard();
   }, [dataInicio, dataFim, ubsAtiva]);
 
+  const exportarParaExcel = () => {
+    if (!kpis?.ranking_ofensores_ubs || kpis.ranking_ofensores_ubs.length === 0) {
+      alert("Não há dados para exportar neste período.");
+      return;
+    }
+
+    // Mapeando os dados para ficarem com colunas amigáveis no Excel
+    const dadosExcel = kpis.ranking_ofensores_ubs.map(ubs => ({
+      "Unidade de Saúde": ubs.nome_ubs,
+      "Vagas Ofertadas": ubs.total_vagas,
+      "Faltas Registradas": ubs.total_faltas,
+      "Taxa de Absenteísmo (%)": ubs.taxa_absenteismo_percentual
+    }));
+
+    // Criando a planilha
+    const worksheet = XLSX.utils.json_to_sheet(dadosExcel);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Relatório de Faltas");
+
+    // Fazendo o download
+    XLSX.writeFile(workbook, `Relatorio_Absenteismo_${dataInicio}_a_${dataFim}.xlsx`);
+  };
+
   const globais = kpis?.kpis_globais;
   const vagas = globais?.total_vagas_disponiveis ?? 0;
   const faltas = globais?.total_faltas ?? 0;
@@ -89,28 +109,36 @@ export default function DashboardGerencial() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      
+
       {/* Header e Filtros */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-2xl shadow-sm border border-gray-100 gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Painel Gerencial</h2>
           <p className="text-slate-500 text-sm mt-1">Indicadores em tempo real da rede municipal de saúde</p>
         </div>
-        
+
         <div className="flex items-center space-x-3">
           <div className="flex flex-col">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Início</label>
             <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)}
-              className="bg-slate-50 border border-slate-200 text-slate-700 px-3 py-2 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/50 text-sm font-semibold transition-shadow"/>
+              className="bg-slate-50 border border-slate-200 text-slate-700 px-3 py-2 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/50 text-sm font-semibold transition-shadow" />
           </div>
           <span className="text-slate-300 mt-5 font-bold">–</span>
           <div className="flex flex-col">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Fim</label>
             <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)}
-              className="bg-slate-50 border border-slate-200 text-slate-700 px-3 py-2 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/50 text-sm font-semibold transition-shadow"/>
+              className="bg-slate-50 border border-slate-200 text-slate-700 px-3 py-2 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/50 text-sm font-semibold transition-shadow" />
           </div>
+
+          <button onClick={exportarParaExcel} disabled={loading || !kpis?.ranking_ofensores_ubs?.length}
+            className="mt-5 p-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center gap-2 text-sm font-bold shadow-sm"
+            title="Exportar para Excel">
+            <Download size={18} />
+            <span className="hidden sm:inline">Excel</span>
+          </button>
+
           <button onClick={fetchDashboard} disabled={loading}
-            className="mt-5 p-2 bg-primary text-white rounded-lg hover:bg-secondary transition-colors disabled:opacity-50">
+            className="mt-5 p-2 bg-primary text-white rounded-lg hover:bg-secondary transition-colors disabled:opacity-50 shadow-sm">
             <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
           </button>
         </div>
@@ -125,7 +153,7 @@ export default function DashboardGerencial() {
 
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4 animate-pulse">
-          {[1,2,3,4,5].map(i => <div key={i} className="h-32 bg-white rounded-2xl shadow-sm border border-gray-100"/>)}
+          {[1, 2, 3, 4, 5].map(i => <div key={i} className="h-32 bg-white rounded-2xl shadow-sm border border-gray-100" />)}
         </div>
       ) : (
         <>
@@ -159,7 +187,7 @@ export default function DashboardGerencial() {
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
                       <XAxis dataKey="nome_ubs" tick={{ fontSize: 11, fill: '#64748B', fontWeight: 600 }} axisLine={false} tickLine={false} />
                       <YAxis tick={{ fontSize: 12, fill: '#64748B', fontWeight: 600 }} axisLine={false} tickLine={false} tickFormatter={(val) => `${val}%`} />
-                      <Tooltip 
+                      <Tooltip
                         cursor={{ fill: '#F8FAFC' }}
                         contentStyle={{ borderRadius: '12px', border: '1px solid #E2E8F0', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
                         formatter={(val: any, _: any, props: any) => [`${val}%`, props.payload.nome_completo]}
@@ -186,7 +214,7 @@ export default function DashboardGerencial() {
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col">
               <h3 className="text-lg font-bold text-slate-800 mb-6">Diagnóstico do Mês</h3>
               <div className="space-y-4 flex-1">
-                
+
                 <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100">
                   <p className="text-xs font-bold text-emerald-500 uppercase tracking-wide mb-1">Eficiência</p>
                   <p className="text-2xl font-black text-emerald-700">
