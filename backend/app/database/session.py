@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker, declarative_base, Session
 DATABASE_URL = os.getenv(
     "DATABASE_URL", 
     "postgresql+asyncpg://postgres:postgres@localhost:5432/regulacao_sus"
+    "postgresql+asyncpg://postgres:SfYfjWhHjnyElXtOQativILFJcWnTPZJ@postgres.railway.internal:5432/railway"
 )
 
 # Derivação da URL síncrona de forma segura
