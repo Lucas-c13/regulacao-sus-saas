@@ -10,8 +10,8 @@ import {
   MapPin,
   Building2,
   UserPlus,
-  HeartPulse,
   CalendarDays,
+  CalendarPlus,
   Stethoscope,
   CalendarX,
   Settings,
@@ -127,6 +127,10 @@ export default function Layout({ children }: { children: ReactNode }) {
             <>
               <NavLink to="/recepcao/agenda" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-2.5 rounded-xl font-bold transition-all text-sm ${isActive ? 'bg-primary/10 text-primary shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>
                 <Calendar size={18} /><span>Agenda Global</span>
+              </NavLink>
+
+              <NavLink to="/recepcao/novo-agendamento" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-2.5 rounded-xl font-bold transition-all text-sm ${isActive ? 'bg-primary/10 text-primary shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>
+                <CalendarPlus size={18} /><span>Novo Agendamento</span>
               </NavLink>
 
               <NavLink to="/recepcao/pacientes" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-2.5 rounded-xl font-bold transition-all text-sm ${isActive ? 'bg-primary/10 text-primary shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>

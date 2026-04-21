@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../core/AuthContext'; // <-- Importamos o AuthContext
 import { api } from '../../core/api';
-import { UserCheck, Clock, XCircle, AlertCircle } from 'lucide-react';
+import { UserCheck, Clock, XCircle, AlertCircle, Plus } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 interface PacienteAgenda {
   id_item: string;
@@ -110,65 +111,78 @@ export default function AgendaDia() {
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-      {/* Cabeçalho do Card */}
-      <div className="p-6 border-b border-gray-200 flex justify-between items-center bg-gray-50/50">
-        <div>
-          <h2 className="text-xl font-bold text-textMain">Agenda de Hoje</h2>
-          <p className="text-sm text-gray-500 mt-1">
-            Profissional: <span className="font-semibold text-primary">{agenda?.medico}</span>
-          </p>
-        </div>
-        <div className="bg-primary/10 text-primary px-4 py-2 rounded-lg font-bold">
-          {agenda?.total_pacientes} Pacientes
-        </div>
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Agenda Global</h2>
+        <Link 
+          to="/recepcao/novo-agendamento"
+          className="bg-primary hover:bg-secondary text-white px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-primary/20 transition-all active:scale-95"
+        >
+          <Plus size={20} />
+          <span>Novo Agendamento</span>
+        </Link>
       </div>
 
-      {/* Tabela Sênior e Limpa */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-gray-50 border-b border-gray-200 text-xs uppercase tracking-wider text-gray-500 font-semibold">
-              <th className="p-4 pl-6">Horário</th>
-              <th className="p-4">Cidadão</th>
-              <th className="p-4">Situação</th>
-              <th className="p-4 text-right pr-6">Ação</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {agenda?.pacientes.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="p-8 text-center text-gray-500">
-                  Nenhum paciente agendado para hoje.
-                </td>
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        {/* Cabeçalho do Card */}
+        <div className="p-6 border-b border-gray-200 flex justify-between items-center bg-gray-50/50">
+          <div>
+            <h2 className="text-xl font-bold text-textMain">Agenda de Hoje</h2>
+            <p className="text-sm text-gray-500 mt-1">
+              Profissional: <span className="font-semibold text-primary">{agenda?.medico}</span>
+            </p>
+          </div>
+          <div className="bg-primary/10 text-primary px-4 py-2 rounded-lg font-bold">
+            {agenda?.total_pacientes} Pacientes
+          </div>
+        </div>
+
+        {/* Tabela Sênior e Limpa */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200 text-xs uppercase tracking-wider text-gray-500 font-semibold">
+                <th className="p-4 pl-6">Horário</th>
+                <th className="p-4">Cidadão</th>
+                <th className="p-4">Situação</th>
+                <th className="p-4 text-right pr-6">Ação</th>
               </tr>
-            ) : (
-              agenda?.pacientes.map((paciente, index) => (
-                <tr key={index} className="hover:bg-gray-50/50 transition-colors group">
-                  <td className="p-4 pl-6 font-semibold text-textMain">
-                    {paciente.hora}
-                  </td>
-                  <td className="p-4 text-textMain font-medium">
-                    {paciente.nome_ficticio}
-                  </td>
-                  <td className="p-4">
-                    {renderizarStatus(paciente.status)}
-                  </td>
-                  <td className="p-4 text-right pr-6">
-                    {paciente.status === 'M' && (
-                    <button 
-                        onClick={() => handleCheckIn(paciente.id_item)}
-                        className="bg-primary hover:bg-secondary text-white px-4 py-1.5 rounded-md text-sm font-semibold transition-colors"
-                    >
-                        Fazer Check-in
-                    </button>
-                    )}
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {agenda?.pacientes.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="p-8 text-center text-gray-500">
+                    Nenhum paciente agendado para hoje.
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                agenda?.pacientes.map((paciente, index) => (
+                  <tr key={index} className="hover:bg-gray-50/50 transition-colors group">
+                    <td className="p-4 pl-6 font-semibold text-textMain">
+                      {paciente.hora}
+                    </td>
+                    <td className="p-4 text-textMain font-medium">
+                      {paciente.nome_ficticio}
+                    </td>
+                    <td className="p-4">
+                      {renderizarStatus(paciente.status)}
+                    </td>
+                    <td className="p-4 text-right pr-6">
+                      {paciente.status === 'M' && (
+                      <button 
+                          onClick={() => handleCheckIn(paciente.id_item)}
+                          className="bg-primary hover:bg-secondary text-white px-4 py-1.5 rounded-md text-sm font-semibold transition-colors"
+                      >
+                          Fazer Check-in
+                      </button>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
