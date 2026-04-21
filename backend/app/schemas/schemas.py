@@ -64,11 +64,15 @@ class EscalaCentralBase(BaseModel):
     id_profissional: uuid.UUID
     id_especialidade: uuid.UUID
     tp_dia_semana: int = Field(..., ge=1, le=7, description="1 para Segunda, 7 para Domingo")
+    dt_inicio: date
+    dt_fim: date
+    dt_disponibilidade: date = Field(..., description="Data em que o agendamento abre para o público")
     cbo: Optional[str] = Field(None, description="CBO (Classificação Brasileira de Ocupações) da especialidade")
     hr_inicio: time = Field(..., description="Hora de início do turno (ex: 08:00)")
     hr_fim: time = Field(..., description="Hora de fim do turno (ex: 17:00)")
     tempo_medio_min: int = Field(..., gt=0, description="Duração de cada consulta em minutos (ex: 15)")
     is_disponivel_app: bool = Field(default=True, description="Se a vaga vai para a App ou fica exclusiva na receção")
+    sn_bloqueia_feriados: bool = Field(default=True, description="Se a escala respeita feriados e bloqueios")
 
 class EscalaCentralCreate(EscalaCentralBase):
     pass
@@ -151,3 +155,22 @@ class MunicipioResponse(BaseModel):
     ibge: str
 
     model_config = {"from_attributes": True}
+
+# ==========================================
+# GESTÃO DE FERIADOS
+# ==========================================
+
+class FeriadoCreate(BaseModel):
+    data: date
+    descricao: str = Field(..., max_length=150)
+    tipo: str = Field("municipal", description="municipal, estadual, nacional, ponto_facultativo")
+
+class FeriadoResponse(BaseModel):
+    id_feriado: Optional[uuid.UUID] = None
+    data: date
+    descricao: str
+    tipo: str
+    dt_cadastro: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

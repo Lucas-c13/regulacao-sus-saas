@@ -1,17 +1,24 @@
 import { useState, useEffect } from 'react';
-import { api } from '../../core/api'; // Ajuste o caminho conforme sua estrutura
-import { CalendarX, Plus, Trash2, AlertCircle } from 'lucide-react';
+import { api } from '../../core/api';
+import { CalendarX, Plus, Trash2, AlertCircle, Info, CheckCircle2 } from 'lucide-react';
+import { toast } from 'react-hot-toast';
+
+// Shared Components
+import { PremiumHeader } from '../../shared/components/PremiumHeader';
+import { LoadingSpinner } from '../../shared/components/LoadingSpinner';
+import { StatusBadge } from '../../shared/components/StatusBadge';
 
 interface Feriado {
     id_feriado: string;
     data: string;
     descricao: string;
-    tipo: 'nacional' | 'estadual' | 'municipal' | 'ponto_facultativo';
+    tipo: 'municipal' | 'estadual' | 'nacional' | 'ponto_facultativo';
 }
 
 export default function GestaoFeriados() {
     const [feriados, setFeriados] = useState<Feriado[]>([]);
     const [loading, setLoading] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
     const [erro, setErro] = useState('');
 
     // Estados do formulário
@@ -22,12 +29,11 @@ export default function GestaoFeriados() {
     const carregarFeriados = async () => {
         try {
             setLoading(true);
-            // Ajuste a rota para a que você definiu no seu feriados.py
+            setErro('');
             const response = await api.get('/feriados/');
             setFeriados(response.data);
         } catch (error) {
-            console.error('Erro ao buscar feriados:', error);
-            setErro('Não foi possível carregar a lista de feriados.');
+            setErro('Não foi possível carregar a lista de feriados locais.');
         } finally {
             setLoading(false);
         }
@@ -42,150 +48,177 @@ export default function GestaoFeriados() {
         if (!novaData || !novaDescricao) return;
 
         try {
-            setLoading(true);
+            setSubmitting(true);
             await api.post('/feriados/', {
                 data: novaData,
                 descricao: novaDescricao,
                 tipo: novoTipo
             });
 
+            toast.success('Feriado bloqueado com sucesso!');
             setNovaData('');
             setNovaDescricao('');
-            carregarFeriados(); // Recarrega a lista
-        } catch (error) {
-            console.error('Erro ao criar feriado:', error);
-            setErro('Erro ao adicionar o feriado. Verifique os dados.');
+            setNovoTipo('municipal');
+            carregarFeriados();
+        } catch (error: any) {
+            toast.error(error.response?.data?.detail || 'Erro ao adicionar feriado.');
         } finally {
-            setLoading(false);
+            setSubmitting(false);
         }
     };
 
     const handleRemover = async (id: string) => {
-        if (!window.confirm('Tem certeza que deseja remover este bloqueio da agenda?')) return;
+        if (!window.confirm('Deseja realmente liberar esta data na agenda?')) return;
 
         try {
             setLoading(true);
             await api.delete(`/feriados/${id}`);
+            toast.success('Bloqueio removido.');
             carregarFeriados();
         } catch (error) {
-            console.error('Erro ao remover feriado:', error);
-            setErro('Erro ao remover o feriado.');
+            toast.error('Erro ao remover o feriado.');
         } finally {
             setLoading(false);
         }
     };
 
-    // Função para formatar data (YYYY-MM-DD para DD/MM/YYYY)
     const formatarData = (dataIso: string) => {
         const [ano, mes, dia] = dataIso.split('-');
         return `${dia}/${mes}/${ano}`;
     };
 
     return (
-        <div className="space-y-6">
-            <div className="flex items-center space-x-3">
-                <CalendarX className="w-8 h-8 text-primary" />
-                <div>
-                    <h2 className="text-2xl font-bold text-textMain">Gestão de Feriados</h2>
-                    <p className="text-sm text-gray-500">Bloqueie datas para evitar agendamentos automáticos.</p>
-                </div>
-            </div>
+        <div className="max-w-5xl mx-auto space-y-6 pb-20 animate-in fade-in duration-500">
+            
+            <PremiumHeader 
+                icon={CalendarX}
+                title="Gestão de Calendário"
+                subtitle="Cadastre feriados municipais ou pontos facultativos para travar agendamentos."
+            />
 
             {erro && (
-                <div className="bg-red-50 text-red-600 p-4 rounded-lg flex items-center space-x-2">
+                <div className="bg-red-50 text-red-600 p-5 rounded-2xl flex items-center gap-3 border border-red-100 font-bold">
                     <AlertCircle size={20} />
-                    <span>{erro}</span>
+                    {erro}
                 </div>
             )}
 
-            {/* Formulário de Adição */}
-            <form onSubmit={handleAdicionar} className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row md:items-end gap-4">
-                <div className="flex-1">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Data</label>
-                    <input
-                        type="date"
-                        required
-                        value={novaData}
-                        onChange={(e) => setNovaData(e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-primary focus:border-primary outline-none"
-                    />
+            {/* Guia de uso */}
+            <div className="bg-amber-50 border border-amber-100 rounded-2xl p-5 flex gap-4">
+                <Info className="text-amber-500 shrink-0" size={24} />
+                <div className="text-sm text-amber-800 font-medium leading-relaxed">
+                    <p className="font-bold text-amber-900 mb-1">Como funciona o bloqueio?</p>
+                    Datas cadastradas aqui impedem a geração de horários automáticos para todos os profissionais do município. 
+                    Feriados nacionais já são bloqueados automaticamente pelo sistema.
                 </div>
-
-                <div className="flex-1">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
-                    <input
-                        type="text"
-                        required
-                        placeholder="Ex: Aniversário da Cidade"
-                        value={novaDescricao}
-                        onChange={(e) => setNovaDescricao(e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-primary focus:border-primary outline-none"
-                    />
-                </div>
-
-                <div className="flex-1">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
-                    <select
-                        value={novoTipo}
-                        onChange={(e) => setNovoTipo(e.target.value as Feriado['tipo'])}
-                        className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-primary focus:border-primary outline-none bg-white"
-                    >
-                        <option value="municipal">Municipal</option>
-                        <option value="estadual">Estadual</option>
-                        <option value="nacional">Nacional</option>
-                        <option value="ponto_facultativo">Ponto Facultativo</option>
-                    </select>
-                </div>
-
-                <button
-                    type="submit"
-                    disabled={loading}
-                    className="bg-primary text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-primary/90 transition-colors flex items-center gap-2 disabled:opacity-70"
-                >
-                    <Plus size={20} />
-                    Adicionar
-                </button>
-            </form>
-
-            {/* Tabela de Feriados */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                <table className="w-full text-left border-collapse">
-                    <thead>
-                        <tr className="bg-gray-50 border-b border-gray-200">
-                            <th className="p-4 font-semibold text-gray-600">Data</th>
-                            <th className="p-4 font-semibold text-gray-600">Descrição</th>
-                            <th className="p-4 font-semibold text-gray-600">Tipo</th>
-                            <th className="p-4 font-semibold text-gray-600 text-center">Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {feriados.length === 0 ? (
-                            <tr>
-                                <td colSpan={4} className="p-8 text-center text-gray-500">
-                                    Nenhum feriado cadastrado. A agenda está totalmente livre.
-                                </td>
-                            </tr>
-                        ) : (
-                            feriados.map((feriado) => (
-                                <tr key={feriado.id_feriado} className="border-b border-gray-100 hover:bg-gray-50/50">
-                                    <td className="p-4 font-medium text-textMain">{formatarData(feriado.data)}</td>
-                                    <td className="p-4 text-gray-700">{feriado.descricao}</td>
-                                    <td className="p-4 text-gray-700 capitalize">{feriado.tipo.replace('_', ' ')}</td>
-                                    <td className="p-4 text-center">
-                                        <button
-                                            onClick={() => handleRemover(feriado.id_feriado)}
-                                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                            title="Remover Feriado"
-                                        >
-                                            <Trash2 size={18} />
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))
-                        )}
-                    </tbody>
-                </table>
             </div>
+
+            {/* Formulário */}
+            <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
+                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 ml-1">Adicionar Novo Bloqueio Local</h3>
+                <form onSubmit={handleAdicionar} className="grid grid-cols-1 md:grid-cols-4 gap-6 items-end">
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Data do Evento</label>
+                        <input
+                            type="date"
+                            required
+                            value={novaData}
+                            onChange={(e) => setNovaData(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3.5 outline-none focus:ring-4 focus:ring-primary/10 font-bold transition-all"
+                        />
+                    </div>
+
+                    <div className="md:col-span-2 space-y-2">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Descrição (Motivo do Bloqueio)</label>
+                        <input
+                            type="text"
+                            required
+                            placeholder="Ex: Padroeira do Município"
+                            value={novaDescricao}
+                            onChange={(e) => setNovaDescricao(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3.5 outline-none focus:ring-4 focus:ring-primary/10 font-bold transition-all"
+                        />
+                    </div>
+
+                    <button
+                        type="submit"
+                        disabled={submitting}
+                        className="bg-primary text-white h-[52px] rounded-xl font-black shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                        {submitting ? <LoadingSpinner size={18} className="p-0 text-white" /> : (
+                            <>
+                                <Plus size={18} />
+                                <span>Bloquear Data</span>
+                            </>
+                        )}
+                    </button>
+                </form>
+            </div>
+
+            {/* Listagem */}
+            <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+                {loading && feriados.length === 0 ? (
+                    <LoadingSpinner label="Lendo calendário do município..." className="py-20" />
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                            <thead>
+                                <tr className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase font-black tracking-widest text-slate-400">
+                                    <th className="p-6">Data</th>
+                                    <th className="p-6">Descrição do Evento</th>
+                                    <th className="p-6">Status da Agenda</th>
+                                    <th className="p-6 text-right">Ação</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                                {feriados.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={4} className="p-20 text-center text-slate-400 font-bold italic">
+                                            Nenhum bloqueio municipal ativo.
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    feriados.map((f) => (
+                                        <tr key={f.id_feriado} className="hover:bg-slate-50 transition-colors group">
+                                            <td className="p-6 font-mono font-black text-slate-700 tracking-tighter">
+                                                {formatarData(f.data)}
+                                            </td>
+                                            <td className="p-6 font-bold text-slate-800">
+                                                {f.descricao}
+                                            </td>
+                                    <td className="p-6">
+                                                <div className="flex items-center gap-2">
+                                                    <StatusBadge 
+                                                        label={f.tipo.replace('_', ' ')} 
+                                                        type={f.tipo === 'nacional' ? 'success' : 'neutral'} 
+                                                    />
+                                                    {f.tipo === 'nacional' && <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded uppercase">Automático</span>}
+                                                </div>
+                                            </td>
+                                            <td className="p-6 text-right">
+                                                {f.id_feriado ? (
+                                                    <button
+                                                        onClick={() => handleRemover(f.id_feriado)}
+                                                        className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                                                        title="Remover Bloqueio"
+                                                    >
+                                                        <Trash2 size={20} />
+                                                    </button>
+                                                ) : (
+                                                    <div className="p-3 text-slate-200 cursor-not-allowed" title="Feriados nacionais não podem ser removidos.">
+                                                        <Trash2 size={20} />
+                                                    </div>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+
         </div>
     );
 }

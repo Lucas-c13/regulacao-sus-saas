@@ -70,22 +70,84 @@ async def criar_escala(
         
         qt_sugerida = minutos_totais // dados.tempo_medio_min if dados.tempo_medio_min > 0 else 0
 
-        # 5. Criar a Escala
+        # 5. Criar a Escala (Molde)
         nova_escala = models.EscalaCentral(
             id_ubs=dados.id_ubs,
             id_profissional=dados.id_profissional,
             id_especialidade=dados.id_especialidade,
             tp_dia_semana=dados.tp_dia_semana,
+            dt_inicio=dados.dt_inicio,
+            dt_fim=dados.dt_fim,
+            dt_disponibilidade=dados.dt_disponibilidade,
             hr_inicio=dados.hr_inicio,
             hr_fim=dados.hr_fim,
             qt_atendimento=qt_sugerida,
             tempo_medio_min=dados.tempo_medio_min,
             is_disponivel_app=dados.is_disponivel_app,
+            sn_bloqueia_feriados=dados.sn_bloqueia_feriados,
             id_municipio=tenant_id,
             sn_ativo=True
         )
 
         db.add(nova_escala)
+        await db.flush() # Para gerar o id_escala antes de criar as agendas
+
+        # 6. GERAÇÃO IMEDIATA DE VAGAS (Fábrica de Agenda)
+        from datetime import timedelta
+        from ..services.feriados_service import consultar_feriados_nacionais
+        
+        # Carregar feriados uma vez
+        feriados_nacionais = []
+        try:
+            feriados_nacionais = [f["date"] for f in await consultar_feriados_nacionais(dados.dt_inicio.year)]
+            if dados.dt_fim.year > dados.dt_inicio.year:
+                feriados_nacionais += [f["date"] for f in await consultar_feriados_nacionais(dados.dt_fim.year)]
+        except: pass
+
+        stmt_feriados_locais = select(models.Feriado.data).where(
+            and_(
+                models.Feriado.id_municipio == tenant_id,
+                models.Feriado.data >= dados.dt_inicio,
+                models.Feriado.data <= dados.dt_fim
+            )
+        )
+        feriados_locais = (await db.execute(stmt_feriados_locais)).scalars().all()
+        feriados_locais_str = [d.isoformat() for d in feriados_locais]
+
+        current_date = dados.dt_inicio
+        while current_date <= dados.dt_fim:
+            # weekday() 0=Segunda, 6=Domingo. Nosso tp_dia_semana 1=Segunda, 7=Domingo
+            if (current_date.weekday() + 1) == dados.tp_dia_semana:
+                # Verificar feriado
+                if dados.sn_bloqueia_feriados:
+                    if current_date.isoformat() in feriados_nacionais or current_date.isoformat() in feriados_locais_str:
+                        current_date += timedelta(days=1)
+                        continue
+
+                # Cria o dia da agenda
+                agenda_dia = models.AgendaCentral(
+                    id_municipio=tenant_id,
+                    id_escala=nova_escala.id_escala,
+                    dt_agenda=current_date,
+                    sn_ativo=True
+                )
+                db.add(agenda_dia)
+                await db.flush()
+
+                # Gera os slots (Itens)
+                from .agendamentos import gerar_slots_tempo
+                for hr in gerar_slots_tempo(dados.hr_inicio, dados.hr_fim, dados.tempo_medio_min):
+                    item = models.ItAgendaCentral(
+                        id_municipio=tenant_id,
+                        id_agenda=agenda_dia.id_agenda,
+                        hr_agenda=hr,
+                        sn_encaixe=False,
+                        tp_situacao='L'
+                    )
+                    db.add(item)
+
+            current_date += timedelta(days=1)
+
         await db.commit()
         await db.refresh(nova_escala)
         return nova_escala

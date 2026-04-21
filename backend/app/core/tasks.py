@@ -63,100 +63,8 @@ def _gerar_slots_de_tempo(hora_inicio, hora_fim, duracao_minutos):
         current_time += timedelta(minutes=duracao_minutos)
     return slots
 
-async def gerar_agendas_futuras():
-    """Gera vagas automáticas para escalas ativas, respeitando Feriados Nacionais e Municipais/Locais."""
-    logger.info("Iniciando rotina de geração de agendas...")
-    async with SessionLocal() as db:
-        # Busca todas as escalas ativas
-        stmt = select(models.EscalaCentral).where(models.EscalaCentral.sn_ativo == True)
-        result = await db.execute(stmt)
-        escalas = result.scalars().all()
-
-        data_atual = datetime.now().date()
-        dias_a_gerar = 30
-        
-        # --- CARREGA FERIADOS EM MEMÓRIA UMA ÚNICA VEZ ---
-        ano_atual = data_atual.year
-        lista_str_feriados_nacionais = []
-        try:
-            # 1. Busca Feriados Nacionais (BrasilAPI)
-            feriados_api = await consultar_feriados_nacionais(ano_atual)
-            if data_atual.month == 12:
-                feriados_api += await consultar_feriados_nacionais(ano_atual + 1)
-            lista_str_feriados_nacionais = [f["date"] for f in feriados_api]
-        except Exception as e:
-            logger.warning(f"Aviso: Erro ao baixar feriados da BrasilAPI. Ignorando validação nacional. Erro: {str(e)}")
-        
-        # 2. Busca Feriados Cadastrados no Banco (Municipais, Estaduais, etc)
-        # O gestor cadastra esses feriados pelo painel
-        stmt_feriados_locais = select(models.Feriado).where(
-            models.Feriado.data >= data_atual,
-            models.Feriado.data <= data_atual + timedelta(days=dias_a_gerar)
-        )
-        result_locais = await db.execute(stmt_feriados_locais)
-        feriados_locais_db = result_locais.scalars().all()
-        
-        # Mapeamento para acesso rápido: { "id_municipio": ["YYYY-MM-DD", "YYYY-MM-DD"] }
-        feriados_locais_map = {}
-        for f in feriados_locais_db:
-            # Assumindo que a model Feriado tem o id_municipio. 
-            # Se o feriado for global para o sistema inteiro, ajuste a lógica de mapeamento.
-            mun_id = str(f.id_municipio) if hasattr(f, 'id_municipio') and f.id_municipio else 'GLOBAL'
-            dt_str = f.data.isoformat() if hasattr(f.data, 'isoformat') else str(f.data)
-            
-            if mun_id not in feriados_locais_map:
-                feriados_locais_map[mun_id] = []
-            feriados_locais_map[mun_id].append(dt_str)
-
-
-        for escala in escalas:
-            id_mun_escala = str(escala.id_municipio)
-            feriados_deste_municipio = feriados_locais_map.get(id_mun_escala, [])
-            feriados_globais = feriados_locais_map.get('GLOBAL', [])
-            
-            for i in range(dias_a_gerar):
-                dia_alvo = data_atual + timedelta(days=i)
-                dia_semana_python = dia_alvo.weekday() + 1 
-                dia_alvo_str = dia_alvo.isoformat()
-                
-                # --- PREVENÇÃO DE FERIADOS ---
-                is_feriado = (
-                    dia_alvo_str in lista_str_feriados_nacionais or 
-                    dia_alvo_str in feriados_deste_municipio or
-                    dia_alvo_str in feriados_globais
-                )
-                
-                if is_feriado:
-                    logger.info(f"Ignorando geração de slots na Escala {escala.id_escala} no dia {dia_alvo_str} - Motivo: Feriado (Nacional ou Local)!")
-                    continue # Pula o feriado, não gera vagas neste dia!
-                
-                if escala.tp_dia_semana == dia_semana_python:
-                    stmt_check = select(models.AgendaCentral).where(
-                        models.AgendaCentral.id_escala == escala.id_escala,
-                        models.AgendaCentral.dt_agenda == dia_alvo
-                    )
-                    if not (await db.execute(stmt_check)).scalar_one_or_none():
-                        nova_agenda = models.AgendaCentral(
-                            id_municipio=escala.id_municipio,
-                            id_escala=escala.id_escala,
-                            dt_agenda=dia_alvo,
-                            sn_ativo=True
-                        )
-                        db.add(nova_agenda)
-                        await db.flush() 
-                        
-                        horarios = _gerar_slots_de_tempo(escala.hr_inicio, escala.hr_fim, escala.tempo_medio_min)
-                        db.add_all([
-                            models.ItAgendaCentral(
-                                id_municipio=escala.id_municipio,
-                                id_agenda=nova_agenda.id_agenda,
-                                hr_agenda=hr,
-                                sn_encaixe=False,
-                                tp_situacao='L' 
-                            ) for hr in horarios
-                        ])
-        await db.commit()
-        logger.info("Geração de agendas concluída.")
+# O worker de geração automática foi desativado pois agora as escalas têm período
+# definido e são geradas integralmente no momento da criação para garantir precisão.
 
 
 # ---------------------------------------------------------
@@ -254,15 +162,7 @@ def configurar_agendamentos():
         replace_existing=True
     )
     
-    # Tarefa C: Gerador de Agendas (03:00)
-    scheduler.add_job(
-        gerar_agendas_futuras, 
-        'cron', 
-        hour=3, 
-        minute=0, 
-        id="job_gerador_agendas", 
-        replace_existing=True
-    )
+    # O Worker de geração de agendas foi removido e integrado na criação da escala.
     
     # Tarefa D: SMS (18:00)
     scheduler.add_job(

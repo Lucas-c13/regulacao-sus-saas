@@ -35,6 +35,10 @@ export default function GestaoEscalas() {
   const [hrFim, setHrFim] = useState('17:00');
   const [tempoMedioMin, setTempoMedioMin] = useState('15');
   const [disponivelApp, setDisponivelApp] = useState(true);
+  const [bloqueiaFeriados, setBloqueiaFeriados] = useState(true);
+  const [dtInicio, setDtInicio] = useState(new Date().toISOString().split('T')[0]);
+  const [dtFim, setDtFim] = useState('');
+  const [dtDisponibilidade, setDtDisponibilidade] = useState(new Date().toISOString().split('T')[0]);
   
   const [loading, setLoading] = useState(false);
   const [loadingEscalas, setLoadingEscalas] = useState(false);
@@ -101,10 +105,14 @@ export default function GestaoEscalas() {
         id_profissional: idProfissional,
         id_especialidade: idEspecialidade,
         tp_dia_semana: parseInt(diaSemana),
+        dt_inicio: dtInicio,
+        dt_fim: dtFim,
+        dt_disponibilidade: dtDisponibilidade,
         hr_inicio: hrInicio + ':00',
         hr_fim: hrFim + ':00',
         tempo_medio_min: parseInt(tempoMedioMin),
         is_disponivel_app: disponivelApp,
+        sn_bloqueia_feriados: bloqueiaFeriados,
       });
       setSucesso(true);
       carregarEscalas();
@@ -217,15 +225,43 @@ export default function GestaoEscalas() {
                 placeholder="Ex: 15" />
             </div>
 
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-indigo-600 uppercase tracking-wide">Início do Ciclo</label>
+              <input type="date" value={dtInicio} onChange={e => setDtInicio(e.target.value)} required
+                className="w-full px-4 py-3 bg-indigo-50 border border-indigo-200 text-indigo-900 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-semibold" />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-rose-600 uppercase tracking-wide">Fim do Ciclo</label>
+              <input type="date" value={dtFim} onChange={e => setDtFim(e.target.value)} required
+                className="w-full px-4 py-3 bg-rose-50 border border-rose-200 text-rose-900 rounded-xl outline-none focus:ring-2 focus:ring-rose-500/50 transition-all font-semibold" />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-amber-600 uppercase tracking-wide">Disponível para Público em:</label>
+              <input type="date" value={dtDisponibilidade} onChange={e => setDtDisponibilidade(e.target.value)} required
+                className="w-full px-4 py-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl outline-none focus:ring-2 focus:ring-amber-500/50 transition-all font-semibold" />
+            </div>
+
           </div>
 
-          <label className="flex items-center space-x-3 p-4 bg-blue-50 rounded-xl border border-blue-100 cursor-pointer hover:bg-blue-100 transition-colors">
-            <input type="checkbox" checked={disponivelApp} onChange={e => setDisponivelApp(e.target.checked)} className="w-5 h-5 text-primary rounded" />
-            <div className="text-sm text-slate-600">
-              <span className="font-bold text-slate-800 block">Disponível para agendamento pelo App</span>
-              Cidadãos poderão ver e reservar vagas desta escala online.
-            </div>
-          </label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label className="flex items-center space-x-3 p-4 bg-blue-50 rounded-xl border border-blue-100 cursor-pointer hover:bg-blue-100 transition-colors">
+              <input type="checkbox" checked={disponivelApp} onChange={e => setDisponivelApp(e.target.checked)} className="w-5 h-5 text-primary rounded" />
+              <div className="text-sm text-slate-600">
+                <span className="font-bold text-slate-800 block">Disponível no App</span>
+                Cidadãos podem agendar online.
+              </div>
+            </label>
+
+            <label className="flex items-center space-x-3 p-4 bg-amber-50 rounded-xl border border-amber-100 cursor-pointer hover:bg-amber-100 transition-colors">
+              <input type="checkbox" checked={bloqueiaFeriados} onChange={e => setBloqueiaFeriados(e.target.checked)} className="w-5 h-5 text-amber-600 rounded" />
+              <div className="text-sm text-slate-600">
+                <span className="font-bold text-slate-800 block">Respeitar Feriados</span>
+                Agenda bloqueada automaticamente.
+              </div>
+            </label>
+          </div>
 
           <div className="pt-6 border-t border-slate-100 flex justify-end">
             <button type="submit" disabled={loading || !ubsAtiva}
@@ -271,6 +307,15 @@ export default function GestaoEscalas() {
                       {esp?.nome || 'Especialidade'}
                       {' · '}
                       <span className="text-blue-600 font-semibold">{esc.tempo_medio_min} min/consulta</span>
+                      {' · '}
+                      <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${esc.sn_bloqueia_feriados ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                        {esc.sn_bloqueia_feriados ? 'Bloqueia Feriados' : 'Livre em Feriados'}
+                      </span>
+                    </p>
+                    <p className="text-[11px] text-slate-400 font-bold bg-white px-2 py-1 rounded inline-block mt-1 border border-slate-100">
+                      Período: {new Date(esc.dt_inicio).toLocaleDateString('pt-BR')} até {new Date(esc.dt_fim).toLocaleDateString('pt-BR')} 
+                      <span className="mx-2 text-slate-200">|</span> 
+                      Reserva Abre: {new Date(esc.dt_disponibilidade).toLocaleDateString('pt-BR')}
                     </p>
                   </div>
                   <button onClick={() => handleDesativarEscala(esc.id_escala)}

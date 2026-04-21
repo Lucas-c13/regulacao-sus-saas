@@ -12,7 +12,7 @@ import {
   Award
 } from 'lucide-react';
 import { api } from '../../../core/api';
-import { formatarCPF } from '../../../../utils/formatters';
+import { formatarCPF } from '../../../utils/formatters';
 
 // Shared Components
 import { PremiumHeader } from '../../../shared/components/PremiumHeader';

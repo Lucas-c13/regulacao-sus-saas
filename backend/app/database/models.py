@@ -109,6 +109,10 @@ class EscalaCentral(Base):
     id_especialidade: Mapped[uuid.UUID] = mapped_column(ForeignKey("especialidades.id_especialidade"))
     tp_dia_semana: Mapped[int] = mapped_column(Integer) # 1 (Segunda) a 7 (Domingo)
     
+    dt_inicio: Mapped[date] = mapped_column(Date)
+    dt_fim: Mapped[date] = mapped_column(Date)
+    dt_disponibilidade: Mapped[date] = mapped_column(Date) # Data em que abre para agendamento
+    
     # Corrigido de datetime para time
     hr_inicio: Mapped[time] = mapped_column(Time)
     hr_fim: Mapped[time] = mapped_column(Time)
@@ -116,6 +120,7 @@ class EscalaCentral(Base):
     qt_atendimento: Mapped[int] = mapped_column(Integer)
     tempo_medio_min: Mapped[int] = mapped_column(Integer) 
     is_disponivel_app: Mapped[bool] = mapped_column(Boolean, default=True)
+    sn_bloqueia_feriados: Mapped[bool] = mapped_column(Boolean, default=True)
     sn_ativo: Mapped[bool] = mapped_column(Boolean, default=True) # Necessário para o Soft Delete do gestor
 
 class AgendaCentral(Base):
@@ -155,3 +160,17 @@ class LogAuditoria(Base):
     # Qual era o payload? (Gravamos em JSONB para facilitar buscas futuras)
     payload: Mapped[Optional[dict]] = mapped_column(JSONB)
     dt_log: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+class Feriado(Base):
+    """Bloqueios de agenda para feriados municipais, estaduais ou nacionais customizados"""
+    __tablename__ = "feriados"
+    id_feriado: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    id_municipio: Mapped[uuid.UUID] = mapped_column(ForeignKey("municipios.id_municipio"))
+    data: Mapped[date] = mapped_column(Date)
+    descricao: Mapped[str] = mapped_column(String(150))
+    # 'municipal', 'estadual', 'nacional', 'ponto_facultativo'
+    tipo: Mapped[str] = mapped_column(String(30), default='municipal')
+    dt_cadastro: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    # Garantir que não haja duplicidade de feriado na mesma data para o mesmo município
+    __table_args__ = (UniqueConstraint('id_municipio', 'data', name='uix_municipio_feriado_data'),)

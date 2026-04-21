@@ -13,6 +13,7 @@ from ..core.security import get_usuario_logado
 
 import json
 from ..core.middlewares import redis_client
+from ..services.feriados_service import consultar_feriados_nacionais
 
 fuso_br = ZoneInfo('America/Sao_Paulo')
 
@@ -67,6 +68,37 @@ async def realizar_agendamento(
     stmt_municipio = select(models.Municipio).filter_by(id_municipio=tenant_id)
     municipio = (await db.execute(stmt_municipio)).scalar_one_or_none()
     
+    # 1.5 Trava de Feriados (Nacional e Local)
+    # Buscamos a escala para saber se ela respeita feriados
+    stmt_escala = select(models.EscalaCentral).filter(
+        models.EscalaCentral.id_escala == dados.id_escala,
+        models.EscalaCentral.id_municipio == tenant_id
+    )
+    escala_valida = (await db.execute(stmt_escala)).scalar_one_or_none() # Já fazemos isso depois, vou antecipar
+    
+    if escala_valida and escala_valida.sn_bloqueia_feriados:
+        # Verifica se a data do agendamento é feriado nacional
+        try:
+            feriados_api = await consultar_feriados_nacionais(dados.data_agendamento.year)
+            data_str = dados.data_agendamento.isoformat()
+            if any(f["date"] == data_str for f in feriados_api):
+                raise HTTPException(status_code=400, detail="Não é possível agendar nesta escala em feriados nacionais.")
+        except HTTPException as e:
+            raise e
+        except Exception:
+            pass
+
+        # Verifica se é feriado municipal no banco
+        stmt_feriado_local = select(models.Feriado).where(
+            and_(
+                models.Feriado.data == dados.data_agendamento,
+                models.Feriado.id_municipio == tenant_id
+            )
+        )
+        is_feriado_local = (await db.execute(stmt_feriado_local)).scalar_one_or_none()
+        if is_feriado_local:
+            raise HTTPException(status_code=400, detail=f"Data bloqueada pelo município: {is_feriado_local.descricao}")
+
     # 2. Trava de Absenteísmo (Usando as colunas oficiais)
     # Buscamos o limite do município. Se estiver nulo, o padrão é 3.
     limite = municipio.faltas_limite if municipio.faltas_limite is not None else 3
@@ -258,8 +290,13 @@ async def listar_horarios_disponiveis(
         pass # Se o Redis falhar por algum motivo, ignoramos e vamos ao banco
 
     # --- 2. LÓGICA ORIGINAL DO POSTGRESQL ---
-    stmt_escala = select(models.EscalaCentral).filter_by(
-        id_escala=id_escala, id_municipio=tenant_id
+    hoje = date.today()
+    stmt_escala = select(models.EscalaCentral).filter(
+        and_(
+            models.EscalaCentral.id_escala == id_escala,
+            models.EscalaCentral.id_municipio == tenant_id,
+            models.EscalaCentral.dt_disponibilidade <= hoje # Trava de Booking
+        )
     )
     escala = (await db.execute(stmt_escala)).scalar_one_or_none()
     

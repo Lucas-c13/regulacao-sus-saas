@@ -112,6 +112,10 @@ export default function Layout({ children }: { children: ReactNode }) {
               <NavLink to="/admin/especialidades" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-2.5 rounded-xl font-bold transition-all text-sm ${isActive ? 'bg-primary/10 text-primary shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>
                 <Stethoscope size={18} /><span>Especialidades</span>
               </NavLink>
+
+              <NavLink to="/admin/feriados" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-2.5 rounded-xl font-bold transition-all text-sm ${isActive ? 'bg-primary/10 text-primary shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>
+                <CalendarX size={18} /><span>Feriados e Bloqueios</span>
+              </NavLink>
             </>
           )}
 
