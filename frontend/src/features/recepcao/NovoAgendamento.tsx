@@ -86,9 +86,8 @@ export default function NovoAgendamento() {
       });
       const disponíveis = response.data.horarios_disponiveis || [];
       setSlots(disponíveis.map((h: string) => ({ hora: h, disponivel: true })));
-    } catch (err: any) {
-      const msg = err.response?.data?.detail || 'Nenhuma escala configurada para esta data.';
-      setErro(msg);
+      const detail = err.response?.data?.detail;
+      setErro(typeof detail === 'string' ? detail : (detail?.msg || 'Nenhuma escala configurada para esta data.'));
       setSlots([]);
     } finally {
       setCarregandoSlots(false);
@@ -168,7 +167,8 @@ export default function NovoAgendamento() {
       setCpf('');
       setIdPaciente('');
     } catch (err: any) {
-      setErro(err.response?.data?.detail || 'Conflito de horário! Tente outro slot.');
+      const detail = err.response?.data?.detail;
+      setErro(typeof detail === 'string' ? detail : (detail?.msg || 'Conflito de horário! Tente outro slot.'));
     } finally {
       setProcessando(false);
     }

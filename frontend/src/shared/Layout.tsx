@@ -114,7 +114,11 @@ export default function Layout({ children }: { children: ReactNode }) {
               </NavLink>
 
               <NavLink to="/recepcao/pacientes/novo" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
-                <HeartPulse size={20} /><span>Novo Paciente</span>
+                <UserPlus size={20} /><span>Novo Paciente</span>
+              </NavLink>
+
+              <NavLink to="/recepcao/pacientes" className={({ isActive }) => `w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-semibold transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-textMain hover:bg-gray-50'}`}>
+                <HeartPulse size={20} /><span>Pacientes</span>
               </NavLink>
             </>
           )}

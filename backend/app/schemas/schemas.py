@@ -49,6 +49,15 @@ class NovoProfissionalUBS(BaseModel):
     id_ubs: uuid.UUID # A UBS para onde o novo funcionário vai ser designado
     registro_conselho: Optional[str] = Field(None, description="CRM, COREN ou afins do profissional")
 
+class ProfissionalStatusUpdate(BaseModel):
+    sn_ativo: bool
+
+class ProfissionalUpdate(BaseModel):
+    nome: Optional[str] = None
+    conselho: Optional[str] = None
+    id_especialidade: Optional[uuid.UUID] = None
+    permissoes: Optional[dict] = None
+
 class EscalaCentralBase(BaseModel):
     id_ubs: uuid.UUID
     id_profissional: uuid.UUID
@@ -110,13 +119,16 @@ class GestorLocalCreate(BaseModel):
 class PacienteResponse(BaseModel):
     """Retorno padrão para listagem e detalhes de pacientes"""
     id_paciente: uuid.UUID
-    nome: str
-    cpf: Optional[str] = None
-    cns: Optional[str] = None
-    data_nascimento: Optional[date] = None
-    celular: Optional[str] = None
+    nm_paciente: str
+    nr_cpf: Optional[str] = None
+    nr_cns: Optional[str] = None
+    dt_nascimento: Optional[date] = None
+    contato: Optional[dict] = None
     id_municipio: uuid.UUID
     id_ubs_referencia: Optional[uuid.UUID] = None
+    is_validado_sus: bool = False
+    sn_ativo: bool = True
+    faltas_ativas: int = 0
 
     model_config = {"from_attributes": True}
 

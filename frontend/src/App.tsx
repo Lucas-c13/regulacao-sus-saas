@@ -14,6 +14,7 @@ import { ListaUBS } from './features/admin/ListaUBS';
 import CadastroUBS from './features/admin/CadastroUBS';
 import ListaProfissionais from './features/admin/ListaProfissionais';
 import CadastroProfissional from './features/admin/CadastroProfissional';
+import EditarProfissional from './features/admin/EditarProfissional';
 import GestaoEscalas from './features/admin/GestaoEscalas';
 import GestaoEspecialidades from './features/admin/GestaoEspecialidades';
 import GestaoFeriados from './features/admin/GestaoFeriados';
@@ -24,6 +25,7 @@ import ConfiguracoesMunicipio from './features/admin/ConfiguracoesMunicipio';
 import AgendaDia from './features/recepcao/AgendaDia';
 import NovoAgendamento from './features/recepcao/NovoAgendamento';
 import CadastroPaciente from './features/recepcao/CadastroPaciente';
+import ListaPacientes from './features/recepcao/ListaPacientes';
 
 // Proteção Robusta de Componentes via React Router
 function ProtectedRoute({ children, allowedRoles }: { children: ReactNode, allowedRoles?: string[] }) {
@@ -123,6 +125,14 @@ function RoutesMap() {
           </ProtectedRoute>
         } />
 
+        <Route path="/admin/profissionais/editar/:id" element={
+          <ProtectedRoute allowedRoles={['admin_master', 'gestor_prefeitura', 'gestor_local']}>
+            <Layout>
+              <EditarProfissional />
+            </Layout>
+          </ProtectedRoute>
+        } />
+
         <Route path="/admin/escalas" element={
           <ProtectedRoute allowedRoles={['admin_master', 'gestor_prefeitura', 'gestor_local']}>
             <Layout>
@@ -169,6 +179,14 @@ function RoutesMap() {
           <ProtectedRoute allowedRoles={['admin_master', 'gestor_local', 'profissional']}>
             <Layout>
               <CadastroPaciente />
+            </Layout>
+          </ProtectedRoute>
+        } />
+
+        <Route path="/recepcao/pacientes" element={
+          <ProtectedRoute allowedRoles={['admin_master', 'gestor_local', 'profissional']}>
+            <Layout>
+              <ListaPacientes />
             </Layout>
           </ProtectedRoute>
         } />

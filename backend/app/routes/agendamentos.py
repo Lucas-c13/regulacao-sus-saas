@@ -97,55 +97,58 @@ async def realizar_agendamento(
         )
 
     # 3. Iniciar Transação e Trava de Overbooking (Pessimistic Lock)
-    async with db.begin():
-        # Garantir que a escala pertence ao município do usuário logado
-        stmt_escala = select(models.EscalaCentral).filter(
-            models.EscalaCentral.id_escala == dados.id_escala,
-            models.EscalaCentral.id_municipio == tenant_id
-        )
-        escala_valida = (await db.execute(stmt_escala)).scalar_one_or_none()
-        if not escala_valida:
-            raise HTTPException(status_code=403, detail="Acesso negado a esta escala.")
+    # Garantir que a escala pertence ao município do usuário logado
+    stmt_escala = select(models.EscalaCentral).filter(
+        models.EscalaCentral.id_escala == dados.id_escala,
+        models.EscalaCentral.id_municipio == tenant_id
+    )
+    escala_valida = (await db.execute(stmt_escala)).scalar_one_or_none()
+    if not escala_valida:
+        raise HTTPException(status_code=403, detail="Acesso negado a esta escala.")
 
-        stmt_agenda = select(models.AgendaCentral).filter(
-            models.AgendaCentral.id_escala == dados.id_escala,
-            models.AgendaCentral.dt_agenda == dados.data_agendamento
-        ).with_for_update() # Lock de registro ativo
+    stmt_agenda = select(models.AgendaCentral).filter(
+        models.AgendaCentral.id_escala == dados.id_escala,
+        models.AgendaCentral.dt_agenda == dados.data_agendamento
+    ).with_for_update() # Lock de registro ativo
+    
+    agenda_dia = (await db.execute(stmt_agenda)).scalar_one_or_none()
+
+    # Se a agenda do dia não existe, cria o "molde"
+    if not agenda_dia:
+        agenda_dia = models.AgendaCentral(
+            id_escala=dados.id_escala, 
+            dt_agenda=dados.data_agendamento,
+            id_municipio=tenant_id
+        )
+        db.add(agenda_dia)
+        await db.flush()
         
-        agenda_dia = (await db.execute(stmt_agenda)).scalar_one_or_none()
-
-        # Se a agenda do dia não existe, cria o "molde"
-        if not agenda_dia:
-            agenda_dia = models.AgendaCentral(
-                id_escala=dados.id_escala, 
-                dt_agenda=dados.data_agendamento,
-                id_municipio=tenant_id
-            )
-            db.add(agenda_dia)
-            await db.flush()
-            
-        # Verifica se o slot exato já foi ocupado (Evita Race Condition)
-        stmt_slot = select(models.ItAgendaCentral).filter(
-            models.ItAgendaCentral.id_agenda == agenda_dia.id_agenda,
-            models.ItAgendaCentral.hr_agenda == dados.hora_vaga,
-            models.ItAgendaCentral.tp_situacao.in_(['M', 'A'])
+    # Verifica se o slot exato já foi ocupado (Evita Race Condition)
+    stmt_slot = select(models.ItAgendaCentral).filter(
+        models.ItAgendaCentral.id_agenda == agenda_dia.id_agenda,
+        models.ItAgendaCentral.hr_agenda == dados.hora_vaga,
+        models.ItAgendaCentral.tp_situacao.in_(['M', 'A'])
+    )
+    slot_ocupado = (await db.execute(stmt_slot)).first()
+    
+    if slot_ocupado:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, 
+            detail="Horário já reservado por outro cidadão."
         )
-        slot_ocupado = (await db.execute(stmt_slot)).first()
-        
-        if slot_ocupado:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, 
-                detail="Horário já reservado por outro cidadão."
-            )
 
-        # 4. Confirma o Agendamento
-        novo_slot = models.ItAgendaCentral(
-            id_agenda=agenda_dia.id_agenda, 
-            hr_agenda=dados.hora_vaga,
-            id_paciente=dados.id_paciente, 
-            tp_situacao='M'
-        )
-        db.add(novo_slot)
+    # 4. Confirma o Agendamento
+    novo_slot = models.ItAgendaCentral(
+        id_municipio=tenant_id,
+        id_agenda=agenda_dia.id_agenda, 
+        hr_agenda=dados.hora_vaga,
+        id_paciente=dados.id_paciente, 
+        tp_situacao='M'
+    )
+    db.add(novo_slot)
+    
+    # Efetiva a transação
+    await db.commit()
         # --- 5. INVALIDAÇÃO DE CACHE ---
     # Apaga o cache para forçar a API a ir ao banco na próxima leitura
     try:

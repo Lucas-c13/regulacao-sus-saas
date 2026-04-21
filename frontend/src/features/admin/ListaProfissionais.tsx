@@ -60,8 +60,10 @@ export default function ListaProfissionais() {
     setResetando(true);
     setResetErro(null);
     try {
-      await api.post(`/profissionais/reset-senha/${modal.profissional.id_profissional}`);
-      setResetSucesso(`Senha de ${modal.profissional.nome} resetada. Senha provisória: Mudar@123`);
+      await api.post(`/profissionais/${modal.profissional.id_profissional}/reset-senha`);
+      // Lemos o CPF e formatamos se possivel para avisar, caso contrátio usamos fallback visual
+      const cpfFormatado = modal.profissional.cpf || '123456';
+      setResetSucesso(`Senha de ${modal.profissional.nome} resetada para o CPF (${cpfFormatado}).`);
       setTimeout(() => {
         setModal({ aberto: false, profissional: null });
         setResetSucesso(null);
@@ -97,8 +99,8 @@ export default function ListaProfissionais() {
 
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
               <p className="text-sm text-amber-800 font-semibold">
-                ⚠️ A senha de <span className="font-black">{modal.profissional?.nome}</span> será alterada para{' '}
-                <code className="bg-amber-200 px-1.5 py-0.5 rounded font-mono text-xs">Mudar@123</code>.
+                ⚠️ A senha de <span className="font-black">{modal.profissional?.nome}</span> será alterada para o seu{' '}
+                <code className="bg-amber-200 px-1.5 py-0.5 rounded font-mono text-xs">CPF</code> (apenas números).
               </p>
               <p className="text-xs text-amber-700 mt-2 font-medium">
                 O profissional será obrigado a trocar a senha no próximo login (protocolo Zero Trust).
@@ -228,13 +230,39 @@ export default function ListaProfissionais() {
                     </td>
                     <td className="p-5 text-right">
                       <div className="flex items-center justify-end gap-3">
-                        <button className="text-sm font-bold text-primary hover:text-secondary hover:underline transition-colors">
+                        {p.sn_ativo ? (
+                          <button
+                            onClick={async () => {
+                              if(window.confirm(`Deseja inativar o profissional ${p.nome}?`)){
+                                await api.patch(`/profissionais/${p.id_profissional}/status`, { sn_ativo: false });
+                                setProfissionais(profissionais.map(prof => prof.id_profissional === p.id_profissional ? { ...prof, sn_ativo: false } : prof));
+                              }
+                            }}
+                            className="text-xs font-bold text-red-500 hover:text-red-700 hover:underline transition-colors mr-2"
+                          >
+                            Inativar
+                          </button>
+                        ) : (
+                          <button
+                            onClick={async () => {
+                              await api.patch(`/profissionais/${p.id_profissional}/status`, { sn_ativo: true });
+                              setProfissionais(profissionais.map(prof => prof.id_profissional === p.id_profissional ? { ...prof, sn_ativo: true } : prof));
+                            }}
+                            className="text-xs font-bold text-emerald-600 hover:text-emerald-800 hover:underline transition-colors mr-2"
+                          >
+                            Ativar
+                          </button>
+                        )}
+                        <button
+                          onClick={() => navigate(`/admin/profissionais/editar/${p.id_profissional}`)}
+                          className="text-sm font-bold text-primary hover:text-secondary hover:underline transition-colors"
+                        >
                           Editar
                         </button>
                         <button
                           id={`btn-reset-${p.id_profissional}`}
                           onClick={() => abrirModal(p)}
-                          title="Resetar senha para senha provisória"
+                          title="Resetar senha para padrão (CPF)"
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors"
                         >
                           <KeyRound size={13} /> Resetar Senha

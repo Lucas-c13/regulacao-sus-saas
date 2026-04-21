@@ -176,21 +176,192 @@ async def listar_profissionais_municipio(
         for p in profissionais
     ]
 
+@router.get("/{id_profissional}", status_code=status.HTTP_200_OK)
+async def obter_profissional(
+    id_profissional: str,
+    db: AsyncSession = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado)
+):
+    tenant_id = usuario.get("tenant_id")
+    
+    # Busca o profissional pelo ID garantindo o tenant
+    stmt = select(models.Profissional).where(
+        and_(
+            models.Profissional.id_profissional == id_profissional,
+            models.Profissional.id_municipio == tenant_id
+        )
+    )
+    alvo = (await db.execute(stmt)).scalar_one_or_none()
+    
+    if not alvo:
+        raise HTTPException(status_code=404, detail="Profissional não encontrado neste município.")
+        
+    # Busca permissões (apenas a da UBS vinculada primeiramente, num app simplificado 1:1)
+    stmt_vinc = select(models.UbsProfissional).where(
+        models.UbsProfissional.id_profissional == id_profissional
+    )
+    vinculo = (await db.execute(stmt_vinc)).scalars().first()
+    
+    return {
+        "id_profissional": str(alvo.id_profissional),
+        "nome": alvo.nome,
+        "cpf": alvo.cpf,
+        "conselho": alvo.conselho,
+        "sn_ativo": alvo.sn_ativo,
+        "permissoes": vinculo.permissoes if vinculo else {},
+        "id_ubs": str(vinculo.id_ubs) if vinculo else None
+    }
+
+
+# ==========================================
+# GESTÃO DE PROFISSIONAIS (EDIÇÃO E INATIVAÇÃO)
+# ==========================================
+
+@router.put("/{id_profissional}", status_code=status.HTTP_200_OK)
+async def atualizar_profissional(
+    id_profissional: str,
+    dados: schemas.ProfissionalUpdate,
+    db: AsyncSession = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado)
+):
+    role = usuario.get("role")
+    tenant_id = usuario.get("tenant_id")
+    id_profissional_logado = usuario.get("id_profissional")
+
+    # 1. Buscar o profissional alvo garantindo isolamento de tenant
+    stmt = select(models.Profissional).where(
+        and_(
+            models.Profissional.id_profissional == id_profissional,
+            models.Profissional.id_municipio == tenant_id
+        )
+    )
+    result = await db.execute(stmt)
+    alvo = result.scalar_one_or_none()
+
+    if not alvo:
+        raise HTTPException(status_code=404, detail="Profissional não encontrado neste município.")
+
+    # 2. Validação de autorização
+    if role not in ["admin_master", "gestor_prefeitura"]:
+        # Verifica se é Gestor Local e se o alvo pertence à sua UBS
+        stmt_ubs_gestor = select(models.UbsProfissional).where(
+            models.UbsProfissional.id_profissional == id_profissional_logado
+        )
+        vinculo_gestor = (await db.execute(stmt_ubs_gestor)).scalar_one_or_none()
+
+        if not vinculo_gestor or not vinculo_gestor.permissoes.get("is_gestor_local"):
+            raise HTTPException(status_code=403, detail="Acesso negado: Apenas Gestores podem editar profissionais.")
+
+        # Verifica se o alvo está na mesma UBS
+        stmt_ubs_alvo = select(models.UbsProfissional).where(
+            and_(
+                models.UbsProfissional.id_profissional == id_profissional,
+                models.UbsProfissional.id_ubs == vinculo_gestor.id_ubs
+            )
+        )
+        if not (await db.execute(stmt_ubs_alvo)).scalar_one_or_none():
+            raise HTTPException(status_code=403, detail="Acesso negado: O profissional alvo não pertence à sua UBS.")
+
+    # 3. Atualizar dados básicos
+    if dados.nome is not None:
+        alvo.nome = dados.nome
+    if dados.conselho is not None:
+        alvo.conselho = dados.conselho
+        
+    # 4. Atualizar permissões se fornecidas no JSONB
+    if dados.permissoes is not None:
+        stmt_ubs_alvo_perm = select(models.UbsProfissional).where(
+            models.UbsProfissional.id_profissional == id_profissional
+        )
+        vinculo_alvo = (await db.execute(stmt_ubs_alvo_perm)).scalar_one_or_none()
+        if vinculo_alvo:
+            current_perms = vinculo_alvo.permissoes or {}
+            current_perms.update(dados.permissoes)
+            # Para forçar o SQLAlchemy a detectar alteração no JSONB
+            from sqlalchemy.orm.attributes import flag_modified
+            vinculo_alvo.permissoes = current_perms
+            flag_modified(vinculo_alvo, "permissoes")
+
+    # 5. Atualizar Especialidade (Recriação para manter relação 1:1 solicitada)
+    if dados.id_especialidade is not None:
+        from sqlalchemy import delete
+        await db.execute(delete(models.EspecialidadeProfissional).where(
+            models.EspecialidadeProfissional.id_profissional == id_profissional
+        ))
+        novo_vinc_esp = models.EspecialidadeProfissional(
+            id_profissional=id_profissional,
+            id_especialidade=dados.id_especialidade
+        )
+        db.add(novo_vinc_esp)
+
+    await db.commit()
+    return {"msg": "Profissional atualizado com sucesso."}
+
+
+@router.patch("/{id_profissional}/status", status_code=status.HTTP_200_OK)
+async def atualizar_status_profissional(
+    id_profissional: str,
+    dados: schemas.ProfissionalStatusUpdate,
+    db: AsyncSession = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado)
+):
+    role = usuario.get("role")
+    tenant_id = usuario.get("tenant_id")
+    id_profissional_logado = usuario.get("id_profissional")
+
+    # 1. Buscar o profissional alvo
+    stmt = select(models.Profissional).where(
+        and_(
+            models.Profissional.id_profissional == id_profissional,
+            models.Profissional.id_municipio == tenant_id
+        )
+    )
+    alvo = (await db.execute(stmt)).scalar_one_or_none()
+
+    if not alvo:
+        raise HTTPException(status_code=404, detail="Profissional não encontrado neste município.")
+
+    # 2. Validação de autorização
+    if role not in ["admin_master", "gestor_prefeitura"]:
+        stmt_ubs_gestor = select(models.UbsProfissional).where(
+            models.UbsProfissional.id_profissional == id_profissional_logado
+        )
+        vinculo_gestor = (await db.execute(stmt_ubs_gestor)).scalar_one_or_none()
+        if not vinculo_gestor or not vinculo_gestor.permissoes.get("is_gestor_local"):
+            raise HTTPException(status_code=403, detail="Acesso negado.")
+            
+        stmt_ubs_alvo = select(models.UbsProfissional).where(
+            and_(
+                models.UbsProfissional.id_profissional == id_profissional,
+                models.UbsProfissional.id_ubs == vinculo_gestor.id_ubs
+            )
+        )
+        if not (await db.execute(stmt_ubs_alvo)).scalar_one_or_none():
+            raise HTTPException(status_code=403, detail="O profissional alvo não pertence à sua UBS.")
+
+    # 3. Impede inativar a si próprio
+    if str(id_profissional_logado) == id_profissional and not dados.sn_ativo:
+         raise HTTPException(status_code=400, detail="Não é permitido inativar o seu próprio perfil.")
+
+    alvo.sn_ativo = dados.sn_ativo
+    await db.commit()
+    
+    status_str = "ativado" if dados.sn_ativo else "inativado"
+    return {"msg": f"Profissional {status_str} com sucesso."}
+
 
 # ==========================================
 # RESET DE SENHA (AÇÃO DO GESTOR) — Seção 7.3
 # ==========================================
 
-SENHA_PROVISORIA_PADRAO = "Mudar@123"
-
-@router.post("/reset-senha/{id_profissional}", status_code=status.HTTP_200_OK)
+@router.post("/{id_profissional}/reset-senha", status_code=status.HTTP_200_OK)
 async def resetar_senha_profissional(
     id_profissional: str,
     db: AsyncSession = Depends(get_db),
     usuario: dict = Depends(get_usuario_logado)
 ):
     """
-    Ação exclusiva do Gestor: reseta a senha de um profissional para a senha padrão
+    Ação exclusiva do Gestor: reseta a senha de um profissional para o seu CPF ou '123456'
     e ativa a flag is_senha_provisoria=True (Zero Trust First-Login).
     O profissional será obrigado a trocar a senha no próximo acesso (HTTP 428).
     Restrito a: Gestor Prefeitura (Nível 2) ou Gestor Local da UBS do alvo (Nível 3 delegado).
@@ -216,23 +387,18 @@ async def resetar_senha_profissional(
         )
 
     # 2. Validação de autorização
-    # Gestor Prefeitura (Nível 2) pode resetar qualquer profissional do seu tenant
-    # Gestor Local (Nível 3 delegado) só pode resetar profissionais da sua UBS
     if role not in ["admin_master", "gestor_prefeitura"]:
-        # Verifica se é Gestor Local e se o alvo pertence à sua UBS
         stmt_ubs_gestor = select(models.UbsProfissional).where(
             models.UbsProfissional.id_profissional == id_profissional_logado
         )
-        result_ubs = await db.execute(stmt_ubs_gestor)
-        vinculo_gestor = result_ubs.scalar_one_or_none()
+        vinculo_gestor = (await db.execute(stmt_ubs_gestor)).scalar_one_or_none()
 
         if not vinculo_gestor or not vinculo_gestor.permissoes.get("is_gestor_local"):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Acesso negado: Apenas Gestores podem resetar senhas de profissionais."
+                detail="Acesso negado: Apenas Gestores podem resetar senhas."
             )
 
-        # Verifica se o alvo está na mesma UBS do gestor
         stmt_ubs_alvo = select(models.UbsProfissional).where(
             and_(
                 models.UbsProfissional.id_profissional == id_profissional,
@@ -245,8 +411,10 @@ async def resetar_senha_profissional(
                 detail="Acesso negado: O profissional alvo não pertence à sua UBS."
             )
 
-    # 3. Aplicar o reset com senha provisória e registrar auditoria
-    novo_hash = gerar_hash(SENHA_PROVISORIA_PADRAO)
+    # 3. Aplicar o reset definindo CPF ou "123456" como provisória
+    senha_provisoria = alvo.cpf if alvo.cpf else "123456"
+    novo_hash = gerar_hash(senha_provisoria)
+    
     stmt_update = (
         update(models.Profissional)
         .where(models.Profissional.id_profissional == id_profissional)
@@ -261,6 +429,6 @@ async def resetar_senha_profissional(
 
     return {
         "msg": f"Senha do profissional '{alvo.nome}' foi resetada com sucesso.",
-        "instrucao": f"A senha provisória é '{SENHA_PROVISORIA_PADRAO}'. O profissional deverá trocá-la no próximo acesso.",
+        "instrucao": f"A senha provisória é '{senha_provisoria}'. A troca será exigida no próximo acesso.",
         "dt_reset": datetime.now(timezone.utc).isoformat()
     }

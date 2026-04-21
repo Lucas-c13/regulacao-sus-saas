@@ -55,8 +55,42 @@ async def listar_pacientes(
     tenant_id = usuario.get("tenant_id")
     
     stmt = select(models.Paciente).where(models.Paciente.id_municipio == tenant_id)
-    result = await db.execute(stmt)
-    return result.scalars().all()
+    pacientes = (await db.execute(stmt)).scalars().all()
+
+    # Buscar quantidade de faltas ('F') agrupadas por paciente neste tenant
+    from sqlalchemy import func
+    stmt_faltas = select(
+        models.ItAgendaCentral.id_paciente, 
+        func.count(models.ItAgendaCentral.id_item)
+    ).where(
+        and_(
+            models.ItAgendaCentral.id_municipio == tenant_id,
+            models.ItAgendaCentral.tp_situacao == 'F'
+        )
+    ).group_by(models.ItAgendaCentral.id_paciente)
+    
+    faltas_records = await db.execute(stmt_faltas)
+    faltas_count = {row[0]: row[1] for row in faltas_records.all()}
+
+    # Converte os objetos SQLAlchemy para um dicionário manual garantindo o schema
+    results = []
+    for p in pacientes:
+        p_dict = {
+            "id_paciente": p.id_paciente,
+            "nm_paciente": p.nm_paciente,
+            "nr_cpf": p.nr_cpf,
+            "nr_cns": p.nr_cns,
+            "dt_nascimento": p.dt_nascimento,
+            "contato": p.contato,
+            "id_municipio": p.id_municipio,
+            "id_ubs_referencia": p.id_ubs_referencia,
+            "is_validado_sus": p.is_validado_sus,
+            "sn_ativo": p.sn_ativo,
+            "faltas_ativas": faltas_count.get(p.id_paciente, 0)
+        }
+        results.append(p_dict)
+        
+    return results
 
 # ==========================================
 # ROTA: EDITAR / RESET DE SENHA (Gestão)
