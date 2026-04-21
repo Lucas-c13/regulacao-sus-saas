@@ -12,7 +12,6 @@ import DashboardGerencial from './features/dashboard/DashboardGerencial';
 // Admin / Gestão
 import { ListaUBS } from './features/admin/ListaUBS';
 import CadastroUBS from './features/admin/CadastroUBS';
-import EditarUBS from './features/admin/EditarUBS';
 import ListaProfissionais from './features/admin/ListaProfissionais';
 import CadastroProfissional from './features/admin/CadastroProfissional';
 import EditarProfissional from './features/admin/EditarProfissional';
