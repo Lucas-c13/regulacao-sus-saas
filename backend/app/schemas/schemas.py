@@ -48,6 +48,7 @@ class NovoProfissionalUBS(BaseModel):
     senha: str
     id_ubs: uuid.UUID # A UBS para onde o novo funcionário vai ser designado
     registro_conselho: Optional[str] = Field(None, description="CRM, COREN ou afins do profissional")
+    id_especialidade: Optional[uuid.UUID] = Field(None, description="Especialidade vinculada ao profissional")
 
 class ProfissionalStatusUpdate(BaseModel):
     sn_ativo: bool

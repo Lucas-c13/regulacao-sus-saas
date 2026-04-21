@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { api } from '../../core/api';
 import { HeartPulse, CheckCircle2, ShieldAlert, Search, User, UserX, AlertCircle, Loader2, X } from 'lucide-react';
 import { useAuth } from '../../core/AuthContext';
+import { formatarCPF } from '../../utils/formatters';
 
 type Modo = 'cadsus' | 'manual';
 
@@ -38,13 +39,6 @@ export default function CadastroPaciente() {
   const [showFallbackModal, setShowFallbackModal] = useState(false);
   const [cpfTentativa, setCpfTentativa] = useState('');
 
-  const formatarCPF = (valor: string) => {
-    const nums = valor.replace(/\D/g, '').slice(0, 11);
-    return nums
-      .replace(/(\d{3})(\d)/, '$1.$2')
-      .replace(/(\d{3})(\d)/, '$1.$2')
-      .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
-  };
 
   const cpfLimpo = cpf.replace(/\D/g, '');
   const cpfManualLimpo = cpfManual.replace(/\D/g, '');

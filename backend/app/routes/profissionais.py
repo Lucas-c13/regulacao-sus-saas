@@ -65,12 +65,20 @@ async def criar_profissional_ubs(
 
     # 4. Vincular o novo usuário ESTRITAMENTE à mesma UBS solicitada
     novo_vinculo = models.UbsProfissional(
-        id_ubs=dados.id_ubs,
-        id_profissional=novo_prof.id_profissional,
-        # O novo usuário nasce com permissões restritas (Nível 3 comum)
-        permissoes={"is_gestor_local": False, "can_create_escala": False} 
+      id_ubs=dados.id_ubs,
+      id_profissional=novo_prof.id_profissional,
+      # O novo usuário nasce com permissões restritas (Nível 3 comum)
+      permissoes={"is_gestor_local": False, "can_create_escala": False} 
     )
     db.add(novo_vinculo)
+
+    # NOVO: Vínculo com Especialidade se informada
+    if dados.id_especialidade:
+      vinc_esp = models.EspecialidadeProfissional(
+        id_profissional=novo_prof.id_profissional,
+        id_especialidade=dados.id_especialidade
+      )
+      db.add(vinc_esp)
     
     # Finaliza a transação gravando o Profissional e o Vínculo ao mesmo tempo
     try:
