@@ -1,3 +1,4 @@
+import os
 import logging
 import time
 import json
@@ -6,14 +7,13 @@ from jose import jwt
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+
 # Já não precisamos de importar a BD aqui (models e Session), 
 # pois a gravação no Postgres foi transferida para as tasks (APScheduler)
 from ..core.security import SECRET_KEY, ALGORITHM 
 
-# =========================================================
-# CONFIGURAÇÃO DO REDIS (Buffer de Alta Performance)
-# =========================================================
-redis_client = redis.Redis(host='agendamento_redis', port=6379, db=0, decode_responses=True)
 
 # Configuração básica do logger
 logging.basicConfig(

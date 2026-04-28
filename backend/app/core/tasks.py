@@ -1,19 +1,23 @@
+import os
 import json
 import logging
 from datetime import datetime, timedelta
 from sqlalchemy.future import select
 from sqlalchemy import update, and_
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from app.core.middlewares import redis_client 
 from app.database.session import AsyncSessionLocal as SessionLocal
 from app.database import models
 from app.services.feriados_service import consultar_feriados_nacionais
+from redis import asyncio as aioredis
 
 scheduler = AsyncIOScheduler()
 
 logger = logging.getLogger("Workers")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
+# PEGAR A URL CORRETA (IGUAL NO MAIN.PY)
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+redis_client = aioredis.from_url(REDIS_URL, encoding="utf8", decode_responses=True)
 # ---------------------------------------------------------
 # WORKER 1: BULK INSERT DE AUDITORIA
 # ---------------------------------------------------------
