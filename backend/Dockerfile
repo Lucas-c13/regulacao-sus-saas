@@ -29,4 +29,4 @@ EXPOSE 8000
 # 9. Comando de arranque para Produção
 # O uvicorn vai rodar escutando em todos os IPs (0.0.0.0)
 #CMD gunicorn main:app --workers 4 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
-CMD alembic upgrade head && gunicorn main:app --workers 4 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
+CMD gunicorn main:app --workers 4 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
